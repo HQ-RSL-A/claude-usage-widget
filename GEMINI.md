@@ -1,4 +1,4 @@
-# CLAUDE.md — claudeUsageWidget
+# GEMINI.md — claudeUsageWidget
 
 ## What This Is
 
