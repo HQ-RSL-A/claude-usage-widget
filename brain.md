@@ -1,11 +1,11 @@
-# BRAIN.md — claudeUsageWidget
+# brain.md - claude-usage-widget
 
 Reference material for the Claude Usage Widget. Rules live in `CLAUDE.md`.
 
 ## Folder Structure
 
 ```
-claudeUsageWidget/
+claude-usage-widget/
   ClaudeUsageWidget/
     AppDelegate.swift           # NSStatusItem, menu setup, app lifecycle
     UsageService.swift          # API fetching, polling timer, data models
@@ -23,14 +23,14 @@ claudeUsageWidget/
 
 ## Architecture Decisions
 
-- **AppKit only** — lighter weight, better NSStatusItem control than SwiftUI
-- **WKWebView with persistent data store** — `WKWebsiteDataStore.default()` keeps user signed in across restarts
-- **Core Graphics ring** — custom `NSView`, no third-party libraries
-- **5-minute polling** — `Timer.scheduledTimer` + manual refresh available
-- **`main.swift` detects XCTest** — minimal `TestAppDelegate` avoids full UI launch during tests
-- **Ring metric toggle** — `RingMetricMode` enum (`.session` / `.weekly`) persisted in `UserDefaults`
-- **Auth-aware footer** — swaps Sign In / Sign Out based on auth state
-- **Custom RefreshButton** — CGPath-drawn teenyicons SVG, adapts to light/dark
+- **AppKit only** - lighter weight, better NSStatusItem control than SwiftUI
+- **WKWebView with persistent data store** - `WKWebsiteDataStore.default()` keeps user signed in across restarts
+- **Core Graphics ring** - custom `NSView`, no third-party libraries
+- **5-minute polling** - `Timer.scheduledTimer` + manual refresh available
+- **`main.swift` detects XCTest** - minimal `TestAppDelegate` avoids full UI launch during tests
+- **Ring metric toggle** - `RingMetricMode` enum (`.session` / `.weekly`) persisted in `UserDefaults`
+- **Auth-aware footer** - swaps Sign In / Sign Out based on auth state
+- **Custom RefreshButton** - CGPath-drawn teenyicons SVG, adapts to light/dark
 
 ## Auth Flow
 
@@ -40,7 +40,7 @@ claudeUsageWidget/
 4. Session cookie persisted in `WKWebsiteDataStore.default()`
 5. Sign Out: wipes session via `removeData(...)`
 6. Three detection layers: URL KVO, didFinish delegate, API polling
-7. Navigation delegate gates polling — `startPolling()` only after `webView(_:didFinish:)`
+7. Navigation delegate gates polling - `startPolling()` only after `webView(_:didFinish:)`
 
 ### Google OAuth Caveat
 
