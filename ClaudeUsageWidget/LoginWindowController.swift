@@ -1,15 +1,17 @@
 import AppKit
 import WebKit
 
-class LoginWindowController: NSWindowController, WKNavigationDelegate, WKUIDelegate {
+class LoginWindowController: NSWindowController, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     weak var authManager: AuthManager?
     private var webView: WKWebView!
-    private var loginDetected = false
+    private var verifying = false
+    private var finished = false
+    private var fallbackTimer: Timer?
 
     // Holds any OAuth popup windows (e.g. Google sign-in)
     private var popupWindowControllers: [NSWindowController] = []
 
-    convenience init() {
+    init(authManager: AuthManager?) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 640),
             styleMask: [.titled, .closable, .resizable],
@@ -18,8 +20,16 @@ class LoginWindowController: NSWindowController, WKNavigationDelegate, WKUIDeleg
         )
         window.title = "Sign in to Claude"
         window.center()
-        self.init(window: window)
+        super.init(window: window)
+        self.authManager = authManager
+        window.delegate = self
         setupWebView()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) not implemented") }
+
+    deinit {
+        webView?.removeObserver(self, forKeyPath: "URL")
     }
 
     private func setupWebView() {
@@ -31,14 +41,21 @@ class LoginWindowController: NSWindowController, WKNavigationDelegate, WKUIDeleg
         webView.uiDelegate = self
         webView.addObserver(self, forKeyPath: "URL", options: .new, context: nil)
         window?.contentView = webView
-        loadLoginPage()
+        webView.load(URLRequest(url: URL(string: "https://claude.ai/login")!))
     }
 
-    deinit {
-        webView?.removeObserver(self, forKeyPath: "URL")
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        finished = false
+        fallbackTimer?.invalidate()
+        // Fallback: a login that never changes the URL still gets detected within 2 s.
+        fallbackTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            self?.verify()
+        }
     }
 
-    // KVO on webView.url catches client-side routing (SPA navigations that don't trigger didFinish)
+    // MARK: - Detection: URL changes only trigger an API check; the API decides.
+
     override func observeValue(
         forKeyPath keyPath: String?,
         of object: Any?,
@@ -46,47 +63,53 @@ class LoginWindowController: NSWindowController, WKNavigationDelegate, WKUIDeleg
         context: UnsafeMutableRawPointer?
     ) {
         if keyPath == "URL", let url = webView?.url {
-            checkForSuccessfulLogin(url: url)
+            noteCandidate(url: url)
         }
     }
-
-    private func loadLoginPage() {
-        loginDetected = false
-        let url = URL(string: "https://claude.ai/login")!
-        webView.load(URLRequest(url: url))
-    }
-
-    // MARK: - Login Detection
-
-    private func checkForSuccessfulLogin(url: URL) {
-        guard !loginDetected, isSuccessfulLoginURL(url) else { return }
-        loginDetected = true
-        // Close any lingering popup windows
-        popupWindowControllers.forEach { $0.close() }
-        popupWindowControllers.removeAll()
-        authManager?.loginDidSucceed()
-    }
-
-    // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Check the finishing webView's URL (could be main or popup)
-        guard let url = webView.url else { return }
-        checkForSuccessfulLogin(url: url)
+        if let url = webView.url { noteCandidate(url: url) }
+        if webView !== self.webView, let mainURL = self.webView?.url { noteCandidate(url: mainURL) }
+    }
 
-        // Also check the main webView in case it was redirected by a popup completing
-        if webView !== self.webView, let mainURL = self.webView?.url {
-            checkForSuccessfulLogin(url: mainURL)
+    /// A claude.ai URL outside the login routes. Not proof of a session, only a reason to ask the API.
+    func isCandidateLoginURL(_ url: URL) -> Bool {
+        guard let host = url.host, host.contains("claude.ai") else { return false }
+        let loginPaths = ["/login", "/auth", "/oauth"]
+        return !loginPaths.contains(where: { url.path.hasPrefix($0) })
+    }
+
+    private func noteCandidate(url: URL) {
+        guard isCandidateLoginURL(url) else { return }
+        verify()
+    }
+
+    private func verify() {
+        guard !verifying, !finished, let authManager else { return }
+        verifying = true
+        Task { @MainActor [weak self] in
+            let confirmed = await authManager.loginWindowSawCandidate()
+            guard let self else { return }
+            self.verifying = false
+            if confirmed { self.finish() }
         }
     }
 
-    // Internal so tests can verify this logic
-    func isSuccessfulLoginURL(_ url: URL) -> Bool {
-        guard let host = url.host, host.contains("claude.ai") else { return false }
-        let path = url.path
-        // Success: landed on home, chats, or settings — not on /login or /auth
-        let loginPaths = ["/login", "/auth", "/oauth"]
-        return !loginPaths.contains(where: { path.hasPrefix($0) })
+    private func finish() {
+        finished = true
+        fallbackTimer?.invalidate()
+        fallbackTimer = nil
+        popupWindowControllers.forEach { $0.close() }
+        popupWindowControllers.removeAll()
+        close()
+    }
+
+    // MARK: - NSWindowDelegate
+
+    func windowWillClose(_ notification: Notification) {
+        fallbackTimer?.invalidate()
+        fallbackTimer = nil
+        authManager?.loginWindowDidClose()
     }
 
     // MARK: - WKUIDelegate (popup handling for Google OAuth)
@@ -126,9 +149,9 @@ class LoginWindowController: NSWindowController, WKNavigationDelegate, WKUIDeleg
         // Clean up popup controllers whose webview was closed
         popupWindowControllers.removeAll { $0.window?.contentView?.subviews.first == webView }
 
-        // After OAuth popup closes, reload main webView — if login succeeded,
-        // claude.ai will redirect to home (which triggers login detection)
-        guard !loginDetected else { return }
+        // After OAuth popup closes, reload main webView; if login succeeded,
+        // claude.ai redirects to home, which triggers an API check
+        guard !finished else { return }
         self.webView.load(URLRequest(url: URL(string: "https://claude.ai/")!))
     }
 }

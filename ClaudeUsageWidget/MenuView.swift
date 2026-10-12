@@ -134,11 +134,14 @@ class MenuViewController: NSViewController {
 
     // MARK: - State
 
-    private var isSignedIn: Bool = true
+    private var state: AuthState = .unknown
 
     // MARK: - UI Elements
 
     private let titleLabel = NSTextField(labelWithString: "Claude Usage")
+    private let subtitleLabel = NSTextField(labelWithString: "")
+    private let emptyTitleLabel = NSTextField(labelWithString: "Not signed in")
+    private let emptySubtitleLabel = NSTextField(labelWithString: "Sign in to see your usage")
     private let refreshButton = RefreshButton(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
     private let segmentedControl = NSSegmentedControl()
     private let rowsStack = NSStackView()
@@ -178,13 +181,25 @@ class MenuViewController: NSViewController {
         titleLabel.textColor = .labelColor
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        // Subtitle (org name, only when the account has more than one chat org)
+        subtitleLabel.font = .systemFont(ofSize: 10, weight: .regular)
+        subtitleLabel.textColor = .tertiaryLabelColor
+        subtitleLabel.isHidden = true
+        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let titleStack = NSStackView(views: [titleLabel, subtitleLabel])
+        titleStack.orientation = .vertical
+        titleStack.alignment = .leading
+        titleStack.spacing = 1
+        titleStack.translatesAutoresizingMaskIntoConstraints = false
+
         // Refresh button
         refreshButton.onRefresh = { [weak self] in self?.onRefresh?() }
         refreshButton.translatesAutoresizingMaskIntoConstraints = false
         refreshButton.setContentHuggingPriority(.required, for: .horizontal)
 
         // Header row
-        let headerRow = NSStackView(views: [titleLabel, refreshButton])
+        let headerRow = NSStackView(views: [titleStack, refreshButton])
         headerRow.orientation = .horizontal
         headerRow.alignment = .centerY
         headerRow.distribution = .fill
@@ -308,19 +323,17 @@ class MenuViewController: NSViewController {
         ringSymbol.alignment = .center
         ringSymbol.translatesAutoresizingMaskIntoConstraints = false
 
-        let titleLabel = NSTextField(labelWithString: "Not signed in")
-        titleLabel.font = .systemFont(ofSize: 12, weight: .regular)
-        titleLabel.textColor = .secondaryLabelColor
-        titleLabel.alignment = .center
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        emptyTitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
+        emptyTitleLabel.textColor = .secondaryLabelColor
+        emptyTitleLabel.alignment = .center
+        emptyTitleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let subtitleLabel = NSTextField(labelWithString: "Sign in to see your usage")
-        subtitleLabel.font = .systemFont(ofSize: 11, weight: .regular)
-        subtitleLabel.textColor = .tertiaryLabelColor
-        subtitleLabel.alignment = .center
-        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        emptySubtitleLabel.font = .systemFont(ofSize: 11, weight: .regular)
+        emptySubtitleLabel.textColor = .tertiaryLabelColor
+        emptySubtitleLabel.alignment = .center
+        emptySubtitleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let stack = NSStackView(views: [ringSymbol, titleLabel, subtitleLabel])
+        let stack = NSStackView(views: [ringSymbol, emptyTitleLabel, emptySubtitleLabel])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 4
@@ -378,28 +391,50 @@ class MenuViewController: NSViewController {
         preferredContentSize = NSSize(width: 300, height: view.fittingSize.height)
     }
 
-    func updateAuthState(isSignedIn: Bool) {
-        self.isSignedIn = isSignedIn
-        // View may not be loaded yet (popover is lazy) — applyAuthState runs in viewDidLoad
+    func render(state: AuthState) {
+        self.state = state
+        // View may not be loaded yet (popover is lazy); applyAuthState runs in viewDidLoad
         guard isViewLoaded else { return }
         applyAuthState()
     }
 
     private func applyAuthState() {
-        usageStack.isHidden = !isSignedIn
-        emptyStateView.isHidden = isSignedIn
-        refreshButton.isEnabled = isSignedIn
-
-        if isSignedIn {
-            authButton.title = "Sign Out"
-            authButton.contentTintColor = .secondaryLabelColor
-            authButton.font = .systemFont(ofSize: 11, weight: .regular)
-        } else {
-            authButton.title = "Sign In"
-            authButton.contentTintColor = .labelColor
-            authButton.font = .systemFont(ofSize: 11, weight: .medium)
+        switch state {
+        case .signedIn(let org, let chatOrgCount):
+            usageStack.isHidden = false
+            emptyStateView.isHidden = true
+            refreshButton.isEnabled = true
+            subtitleLabel.isHidden = chatOrgCount < 2
+            subtitleLabel.stringValue = org.displayName
+            styleAuthButton(title: "Sign Out", prominent: false)
+        case .unknown:
+            showEmpty(title: "Checking sign-in...", subtitle: "One moment", authTitle: "Sign In", refreshEnabled: false)
+        case .unreachable:
+            showEmpty(title: "Could not reach claude.ai", subtitle: "Check your connection and refresh", authTitle: "Sign In", refreshEnabled: true)
+        case .signedOut:
+            showEmpty(title: "Not signed in", subtitle: "Sign in to see your usage", authTitle: "Sign In", refreshEnabled: false)
+        case .sessionExpired:
+            showEmpty(title: "Session expired", subtitle: "Sign in again to keep tracking usage", authTitle: "Sign In", refreshEnabled: false)
+        case .noChatOrg:
+            showEmpty(title: "No Claude plan on this account", subtitle: "This account only has API access", authTitle: "Sign Out", refreshEnabled: false)
         }
         resizeToFit()
+    }
+
+    private func showEmpty(title: String, subtitle: String, authTitle: String, refreshEnabled: Bool) {
+        usageStack.isHidden = true
+        emptyStateView.isHidden = false
+        subtitleLabel.isHidden = true
+        refreshButton.isEnabled = refreshEnabled
+        emptyTitleLabel.stringValue = title
+        emptySubtitleLabel.stringValue = subtitle
+        styleAuthButton(title: authTitle, prominent: authTitle == "Sign In")
+    }
+
+    private func styleAuthButton(title: String, prominent: Bool) {
+        authButton.title = title
+        authButton.contentTintColor = prominent ? .labelColor : .secondaryLabelColor
+        authButton.font = .systemFont(ofSize: 11, weight: prominent ? .medium : .regular)
     }
 
     func showLoading() {
@@ -419,10 +454,9 @@ class MenuViewController: NSViewController {
     }
 
     @objc private func authTapped() {
-        if isSignedIn {
-            onSignOut?()
-        } else {
-            onSignIn?()
+        switch state {
+        case .signedIn, .noChatOrg: onSignOut?()
+        default: onSignIn?()
         }
     }
 

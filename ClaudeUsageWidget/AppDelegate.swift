@@ -1,6 +1,7 @@
 import AppKit
 import WebKit
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Components
@@ -8,6 +9,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var menuViewController: MenuViewController!
+    private var client: ClaudeAPIClient!
     private var authManager: AuthManager!
     private var usageService: UsageService?
     private var pollingStarted = false
@@ -22,8 +24,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         setupStatusItem()
         setupPopover()
-        setupWebView()
-        setupAuthManager()
+        setupWebView()                      // feeds the old UsageService until Task 7
+        client = ClaudeAPIClient()
+        authManager = AuthManager(client: client)
+        authManager.delegate = self
+        Task { await authManager.checkAuthStatus() }
     }
 
     // MARK: - Setup
@@ -47,14 +52,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupPopover() {
         menuViewController = MenuViewController()
         menuViewController.onRefresh = { [weak self] in
-            self?.usageService?.fetch()
+            guard let self else { return }
+            if case .signedIn = self.authManager.state {
+                self.usageService?.fetch()
+            } else {
+                Task { await self.authManager.checkAuthStatus() }
+            }
         }
-        menuViewController.onSignOut = { [weak self] in
-            self?.signOut()
-        }
-        menuViewController.onSignIn = { [weak self] in
-            self?.authManager.showLoginWindow()
-        }
+        menuViewController.onSignOut = { [weak self] in self?.signOut() }
+        menuViewController.onSignIn = { [weak self] in self?.authManager.showLoginWindow() }
         menuViewController.onToggleMode = { [weak self] mode in
             guard let self = self else { return }
             self.ringMetricMode = mode
@@ -68,12 +74,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover = NSPopover()
         popover.contentViewController = menuViewController
         popover.behavior = .transient
-    }
-
-    private func setupAuthManager() {
-        authManager = AuthManager()
-        authManager.delegate = self
-        authManager.checkAuthStatus()
     }
 
     // MARK: - Status Icon
@@ -109,13 +109,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Sign Out
 
-    private func signOut() {
+    private func stopUsageService() {
         usageService?.stopPolling()
         usageService?.resetCache()
         usageService = nil
         pollingStarted = false
         updateStatusIcon(progress: 0.0, colorState: .normal)
-        menuViewController.updateAuthState(isSignedIn: false)
+    }
+
+    private func signOut() {
+        stopUsageService()
         authManager.signOut()
     }
 }
@@ -123,13 +126,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - AuthManagerDelegate
 
 extension AppDelegate: AuthManagerDelegate {
-    func authManagerDidAuthenticate(_ manager: AuthManager) {
-        menuViewController.updateAuthState(isSignedIn: true)
-        startUsageService()
-    }
-
-    func authManagerDidSignOut(_ manager: AuthManager) {
-        menuViewController.updateAuthState(isSignedIn: false)
+    func authManager(_ manager: AuthManager, didChange state: AuthState) {
+        menuViewController.render(state: state)
+        switch state {
+        case .signedIn:
+            startUsageService()
+        default:
+            stopUsageService()
+        }
     }
 }
 

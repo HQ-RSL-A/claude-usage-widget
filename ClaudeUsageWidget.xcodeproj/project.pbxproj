@@ -14,6 +14,7 @@
 		49F54A2EB598002F9AAA7341 /* AuthManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6B598A548B3E1707F4FC921 /* AuthManagerTests.swift */; };
 		5698FE2A32F06BAF92851D8C /* Fixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F65BA1566A01BFB2756EE7E0 /* Fixtures.swift */; };
 		65EC8EFF98EA6EDCD127627A /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4EA7162C7D5EF409DC9D112 /* AuthManager.swift */; };
+		6C71BB7933B21E7E2A8ACD4B /* FakeClaudeAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666BACBDFDE9072097D2DEC7 /* FakeClaudeAPI.swift */; };
 		7ECA99E64D58376AF8175958 /* OrganizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D235C1C1C78A66606C60F126 /* OrganizationTests.swift */; };
 		8773DA8A197758026F2465D2 /* ClaudeAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B12A091E0BCE60FFCB14EE9 /* ClaudeAPIClient.swift */; };
 		8EA1F829DC6AA8978562C8D5 /* RingViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 061F8320D3E73E35C08824E7 /* RingViewTests.swift */; };
@@ -52,6 +53,7 @@
 		4B12A091E0BCE60FFCB14EE9 /* ClaudeAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeAPIClient.swift; sourceTree = "<group>"; };
 		55E1104C0B872EB2007845ED /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6268D48273DCD1FF3A0EE701 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		666BACBDFDE9072097D2DEC7 /* FakeClaudeAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeClaudeAPI.swift; sourceTree = "<group>"; };
 		8A36DC05FB3F76B3B1FA4E1F /* Organization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Organization.swift; sourceTree = "<group>"; };
 		8BD395ED69FE96C6A6AAB52F /* UsageServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageServiceTests.swift; sourceTree = "<group>"; };
 		9D705336A2AB929001115064 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -78,6 +80,7 @@
 				FE230F7DFE78DBE9C84C7C6B /* ClaudeAPIClientTests.swift */,
 				14A3BF365287F046F88122B4 /* ClaudeAPIErrorTests.swift */,
 				CC56F2E1EAAC21FF2273626F /* ClaudeUsageWidgetTests.swift */,
+				666BACBDFDE9072097D2DEC7 /* FakeClaudeAPI.swift */,
 				F65BA1566A01BFB2756EE7E0 /* Fixtures.swift */,
 				E0BE9B7536A7ADD8E35AC0EB /* ModelsTests.swift */,
 				D235C1C1C78A66606C60F126 /* OrganizationTests.swift */,
@@ -244,6 +247,7 @@
 				989CC55F9134366007B31B8D /* ClaudeAPIClientTests.swift in Sources */,
 				BEC4D6D9C7C9C116C24A5371 /* ClaudeAPIErrorTests.swift in Sources */,
 				4668A43182BF1F7C35B760F0 /* ClaudeUsageWidgetTests.swift in Sources */,
+				6C71BB7933B21E7E2A8ACD4B /* FakeClaudeAPI.swift in Sources */,
 				5698FE2A32F06BAF92851D8C /* Fixtures.swift in Sources */,
 				AFAA0BAD2197F3BD672F99E3 /* ModelsTests.swift in Sources */,
 				7ECA99E64D58376AF8175958 /* OrganizationTests.swift in Sources */,
