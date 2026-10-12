@@ -10,7 +10,7 @@ A small ring in your menu bar fills up as you use Claude. It turns amber when yo
 
 - **Current session** usage with time until reset
 - **Weekly usage** across all models
-- **Weekly Sonnet usage** specifically
+- **Per-model weekly buckets** (Opus, Sonnet) and **extra usage**, only when your plan has them
 - Color-coded ring that changes as you approach your limits
 
 ---
@@ -62,13 +62,15 @@ This app only communicates with `claude.ai`. Your session is stored locally usin
 
 ## Login Notes
 
-The login window uses an embedded WebView. Email/password login works reliably. Google OAuth works in most cases but can occasionally stall on the final redirect step for unsigned apps - if that happens, use email/password instead.
+The login window uses an embedded WebView. Email code and email/password login work reliably. Google OAuth works in most cases but can stall on the final redirect step for unsigned apps; if that happens, use email instead.
+
+The app considers you signed in only when claude.ai's API says so. If your session expires, the popover reads "Session expired" and the login window opens once. Accounts with several organizations get the one claude.ai last had active, as long as it is a chat organization; API console organizations are never shown. Rows in the popover follow your plan: buckets your plan does not have are not shown.
 
 ---
 
 ## Status
 
-v0.2.0 - functional, running daily. Built for personal use. macOS only.
+v0.3.0 - works for any Claude.ai consumer account. macOS only.
 
 ---
 
