@@ -19,6 +19,11 @@ enum ClaudeAPIError: Error, Equatable {
     case server(Int)           // 5xx
     case http(Int)             // any other non-2xx
     case decode(String)        // body did not match the expected shape
+    case callbackTimeout       // browser flow: no redirect within the window
+    case signInCancelled       // browser flow: the user cancelled
+    case stateMismatch         // browser flow: redirect carried a different state
+    case keychain(Int32)       // SecItem call failed (OSStatus)
+    case oauth(String)         // token endpoint refused (4xx), message from its body
 
     /// nil for 2xx. Pure.
     static func classify(_ response: APIResponse) -> ClaudeAPIError? {
@@ -48,6 +53,11 @@ enum ClaudeAPIError: Error, Equatable {
         case .server(let code): return "claude.ai error \(code)"
         case .http(let code): return "claude.ai returned \(code)"
         case .decode: return "Unexpected response, please report"
+        case .callbackTimeout: return "Sign-in timed out, try again"
+        case .signInCancelled: return "Sign-in cancelled"
+        case .stateMismatch: return "Sign-in response did not match, try again"
+        case .keychain(let status): return "Could not read the Keychain (code \(status))"
+        case .oauth(let message): return "Sign-in failed: \(message)"
         }
     }
 }
@@ -86,4 +96,12 @@ protocol ClaudeAPI: AnyObject {
     func lastActiveOrgId() async -> String?
     /// Forget the loaded page; the next get() reloads claude.ai first. Call after sign-out.
     func reset()
+}
+
+// MARK: - AppInfo
+
+enum AppInfo {
+    static var version: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
 }

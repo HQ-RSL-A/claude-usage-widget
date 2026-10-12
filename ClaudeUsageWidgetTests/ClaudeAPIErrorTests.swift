@@ -42,6 +42,18 @@ final class ClaudeAPIErrorTests: XCTestCase {
         XCTAssertEqual(ClaudeAPIError.classify(Fixtures.response(418, "")), .http(418))
     }
 
+    func test_userMessage_signInErrors() {
+        XCTAssertEqual(ClaudeAPIError.callbackTimeout.userMessage, "Sign-in timed out, try again")
+        XCTAssertEqual(ClaudeAPIError.signInCancelled.userMessage, "Sign-in cancelled")
+        XCTAssertEqual(ClaudeAPIError.stateMismatch.userMessage, "Sign-in response did not match, try again")
+        XCTAssertEqual(ClaudeAPIError.keychain(-25293).userMessage, "Could not read the Keychain (code -25293)")
+        XCTAssertEqual(ClaudeAPIError.oauth("invalid_grant").userMessage, "Sign-in failed: invalid_grant")
+    }
+
+    func test_appInfo_versionMatchesBundle() {
+        XCTAssertEqual(AppInfo.version, "0.4.0")
+    }
+
     func test_userMessage_isHumanReadable() {
         XCTAssertEqual(ClaudeAPIError.sessionExpired.userMessage, "Session expired")
         XCTAssertEqual(ClaudeAPIError.server(502).userMessage, "claude.ai error 502")

@@ -151,9 +151,7 @@ class MenuViewController: NSViewController {
     private let separator = NSBox()
     private let versionLabel = NSTextField(labelWithString: "v" + MenuViewController.appVersion)
 
-    static var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-    }
+    static var appVersion: String { AppInfo.version }
 
     // Containers for toggling visibility
     private var usageStack: NSStackView!
