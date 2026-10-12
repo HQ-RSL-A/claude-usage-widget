@@ -53,4 +53,12 @@ enum Fixtures {
     static let usageMinimalJSON = #"{"five_hour": {"utilization": 10, "resets_at": "2026-10-12T22:00:00+00:00"}, "seven_day": {"utilization": 20, "resets_at": "2026-10-16T16:00:00+00:00"}}"#
     static let usageNoSessionJSON = #"{"five_hour": null, "seven_day": {"utilization": 20, "resets_at": "2026-10-16T16:00:00+00:00"}}"#
     static let usageNullUtilizationJSON = #"{"five_hour": {"utilization": null, "resets_at": null}, "seven_day": {"utilization": 20, "resets_at": null}}"#
+
+    // Token endpoint shape from the 2026-10-12 spike.
+    static let tokenResponseJSON = #"{"access_token":"access-1","refresh_token":"refresh-1","expires_in":28800,"refresh_token_expires_in":2592000,"scope":"user:inference user:profile","token_type":"Bearer","token_uuid":"t-1","account":{"uuid":"a-1"},"organization":{"uuid":"o-1"}}"#
+    static let refreshedTokenJSON = #"{"access_token":"access-2","refresh_token":"refresh-2","expires_in":28800,"scope":"user:inference user:profile","token_type":"Bearer"}"#
+    static let tokenRefusedJSON = #"{"error":"invalid_grant","error_description":"The refresh token is invalid"}"#
+    static let profileJSON = #"{"account":{"uuid":"a-1","full_name":"Test Person","display_name":"Test","email":"test@example.com","has_claude_max":true,"has_claude_pro":false},"organization":{"uuid":"o-1","name":"Test's Organization","organization_type":"claude_max","billing_type":"stripe_subscription","rate_limit_tier":"default_claude_max_20x"},"application":{"uuid":"app","name":"Claude Code","slug":"claude-code"},"enabled_plugins":[]}"#
+    static let claudeCodeCredentialsJSON = #"{"claudeAiOauth":{"accessToken":"cc-access","refreshToken":"cc-refresh","expiresAt":4102444800000,"refreshTokenExpiresAt":4102444800000,"scopes":["user:inference","user:profile"],"subscriptionType":"max","rateLimitTier":"default_claude_max_20x"}}"#
+    static let claudeCodeExpiredJSON = #"{"claudeAiOauth":{"accessToken":"cc-old","refreshToken":"cc-refresh","expiresAt":946684800000,"scopes":[],"subscriptionType":"pro"}}"#
 }
