@@ -338,6 +338,7 @@
 				CODE_SIGN_ENTITLEMENTS = ClaudeUsageWidget/ClaudeUsageWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = ClaudeUsageWidget/Info.plist;
@@ -346,6 +347,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.rsla.ClaudeUsageWidget;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
@@ -359,6 +361,7 @@
 				CODE_SIGN_ENTITLEMENTS = ClaudeUsageWidget/ClaudeUsageWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = ClaudeUsageWidget/Info.plist;
@@ -367,6 +370,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.rsla.ClaudeUsageWidget;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;

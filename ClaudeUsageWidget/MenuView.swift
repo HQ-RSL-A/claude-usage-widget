@@ -147,6 +147,11 @@ class MenuViewController: NSViewController {
     private let authButton = NSButton(title: "Sign Out", target: nil, action: nil)
     private let quitButton = NSButton(title: "Quit", target: nil, action: nil)
     private let separator = NSBox()
+    private let versionLabel = NSTextField(labelWithString: "v" + MenuViewController.appVersion)
+
+    static var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
 
     // Containers for toggling visibility
     private var usageStack: NSStackView!
@@ -248,10 +253,15 @@ class MenuViewController: NSViewController {
         quitButton.action = #selector(quitTapped)
         quitButton.translatesAutoresizingMaskIntoConstraints = false
 
+        // Version label
+        versionLabel.font = .systemFont(ofSize: 10, weight: .regular)
+        versionLabel.textColor = .tertiaryLabelColor
+        versionLabel.translatesAutoresizingMaskIntoConstraints = false
+
         // Footer row
         let spacer = NSView()
         spacer.translatesAutoresizingMaskIntoConstraints = false
-        let footerRow = NSStackView(views: [spacer, authButton, quitButton])
+        let footerRow = NSStackView(views: [versionLabel, spacer, authButton, quitButton])
         footerRow.orientation = .horizontal
         footerRow.alignment = .centerY
         footerRow.spacing = 12

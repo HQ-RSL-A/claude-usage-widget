@@ -2,5 +2,8 @@ import XCTest
 @testable import ClaudeUsageWidget
 
 final class ClaudeUsageWidgetTests: XCTestCase {
-    // Tests will be added in Task 3 (Models) and beyond
+    func test_bundleShortVersion_isMarketingVersion() {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        XCTAssertEqual(version, "0.3.0")
+    }
 }
