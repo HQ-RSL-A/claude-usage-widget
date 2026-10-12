@@ -109,15 +109,16 @@ class UsageRowView: NSView {
         ])
     }
 
-    func update(stat: UsageStat, isSession: Bool) {
-        progressBar.progress = stat.percentUsed
-        progressBar.colorState = stat.barColorState
-        percentLabel.stringValue = String(format: "%.0f%%", stat.percentUsed * 100)
-        if isSession {
-            resetLabel.stringValue = stat.resetsInDisplay
-        } else {
-            resetLabel.stringValue = stat.resetsAtDisplay ?? "—"
-        }
+    func update(percent: Double, colorState: RingColorState, detail: String) {
+        progressBar.progress = percent
+        progressBar.colorState = colorState
+        percentLabel.stringValue = String(format: "%.0f%%", percent * 100)
+        resetLabel.stringValue = detail
+    }
+
+    func update(bucket: UsageBucket) {
+        let detail = bucket.kind.isWeekly ? (bucket.resetsAtDisplay ?? "—") : bucket.resetsInDisplay
+        update(percent: bucket.percentUsed, colorState: bucket.barColorState, detail: detail)
     }
 }
 
@@ -140,9 +141,7 @@ class MenuViewController: NSViewController {
     private let titleLabel = NSTextField(labelWithString: "Claude Usage")
     private let refreshButton = RefreshButton(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
     private let segmentedControl = NSSegmentedControl()
-    private let sessionRow = UsageRowView(label: "Current Session")
-    private let weeklyAllRow = UsageRowView(label: "Weekly — All Models")
-    private let weeklySonnetRow = UsageRowView(label: "Weekly — Sonnet")
+    private let rowsStack = NSStackView()
     private let lastUpdatedLabel = NSTextField(labelWithString: "Last updated: —")
     private let authButton = NSButton(title: "Sign Out", target: nil, action: nil)
     private let quitButton = NSButton(title: "Quit", target: nil, action: nil)
@@ -203,10 +202,11 @@ class MenuViewController: NSViewController {
         segmentedControl.controlSize = .small
         segmentedControl.font = .systemFont(ofSize: 11, weight: .medium)
 
-        // Usage rows
-        [sessionRow, weeklyAllRow, weeklySonnetRow].forEach {
-            $0.translatesAutoresizingMaskIntoConstraints = false
-        }
+        // Usage rows (rebuilt from data on every update)
+        rowsStack.orientation = .vertical
+        rowsStack.alignment = .leading
+        rowsStack.spacing = 10
+        rowsStack.translatesAutoresizingMaskIntoConstraints = false
 
         // Last updated
         lastUpdatedLabel.font = .systemFont(ofSize: 10, weight: .regular)
@@ -216,9 +216,7 @@ class MenuViewController: NSViewController {
         // Usage stack (visible when signed in)
         usageStack = NSStackView(views: [
             segmentedControl,
-            sessionRow,
-            weeklyAllRow,
-            weeklySonnetRow,
+            rowsStack,
             lastUpdatedLabel,
         ])
         usageStack.orientation = .vertical
@@ -288,6 +286,7 @@ class MenuViewController: NSViewController {
         usageStack.widthAnchor.constraint(equalTo: mainStack.widthAnchor).isActive = true
         emptyStateView.widthAnchor.constraint(equalTo: mainStack.widthAnchor).isActive = true
         segmentedControl.widthAnchor.constraint(equalTo: usageStack.widthAnchor).isActive = true
+        rowsStack.widthAnchor.constraint(equalTo: usageStack.widthAnchor).isActive = true
 
         view.addSubview(mainStack)
 
@@ -295,7 +294,8 @@ class MenuViewController: NSViewController {
             mainStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
             mainStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
             mainStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
-            mainStack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -12),
+            mainStack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
+            view.widthAnchor.constraint(equalToConstant: 300),
         ])
     }
 
@@ -339,13 +339,43 @@ class MenuViewController: NSViewController {
     // MARK: - Public Update Methods
 
     func update(with data: UsageData) {
-        sessionRow.update(stat: data.currentSession, isSession: true)
-        weeklyAllRow.update(stat: data.weeklyAllModels, isSession: false)
-        weeklySonnetRow.update(stat: data.weeklySonnetOnly, isSession: false)
+        rowsStack.arrangedSubviews.forEach {
+            rowsStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        for bucket in data.buckets {
+            let row = UsageRowView(label: bucket.kind.label)
+            row.update(bucket: bucket)
+            addRow(row)
+        }
+        if let extra = data.extraUsage, extra.isEnabled, let percent = extra.percentUsed {
+            let row = UsageRowView(label: "Extra usage")
+            row.update(percent: percent, colorState: .from(percent: percent), detail: "monthly budget")
+            addRow(row)
+        }
+        if rowsStack.arrangedSubviews.isEmpty {
+            let label = NSTextField(labelWithString: "No usage limits reported for this plan")
+            label.font = .systemFont(ofSize: 11, weight: .regular)
+            label.textColor = .secondaryLabelColor
+            rowsStack.addArrangedSubview(label)
+        }
 
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
         lastUpdatedLabel.stringValue = "Updated " + formatter.localizedString(for: data.lastUpdated, relativeTo: Date())
+        resizeToFit()
+    }
+
+    private func addRow(_ row: UsageRowView) {
+        row.translatesAutoresizingMaskIntoConstraints = false
+        rowsStack.addArrangedSubview(row)
+        row.widthAnchor.constraint(equalTo: rowsStack.widthAnchor).isActive = true
+    }
+
+    /// NSPopover tracks preferredContentSize, so two rows and five rows both fit.
+    private func resizeToFit() {
+        view.layoutSubtreeIfNeeded()
+        preferredContentSize = NSSize(width: 300, height: view.fittingSize.height)
     }
 
     func updateAuthState(isSignedIn: Bool) {
@@ -369,6 +399,7 @@ class MenuViewController: NSViewController {
             authButton.contentTintColor = .labelColor
             authButton.font = .systemFont(ofSize: 11, weight: .medium)
         }
+        resizeToFit()
     }
 
     func showLoading() {

@@ -68,7 +68,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover = NSPopover()
         popover.contentViewController = menuViewController
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 300, height: 280)
     }
 
     private func setupAuthManager() {

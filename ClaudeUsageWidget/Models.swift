@@ -44,18 +44,43 @@ public enum RingMetricMode: String {
     }
 }
 
-// MARK: - UsageStat
+// MARK: - BucketKind
 
-public struct UsageStat {
-    public let percentUsed: Double   // 0.0 to 1.0
-    public let resetsAt: Date?
+/// The usage buckets the widget knows how to show, in display order. Raw values are the API keys.
+public enum BucketKind: String, CaseIterable {
+    case session = "five_hour"
+    case weeklyAll = "seven_day"
+    case weeklyOpus = "seven_day_opus"
+    case weeklySonnet = "seven_day_sonnet"
 
-    public init(percentUsed: Double, resetsAt: Date?) {
-        self.percentUsed = percentUsed
-        self.resetsAt = resetsAt
+    public var label: String {
+        switch self {
+        case .session: return "Current Session"
+        case .weeklyAll: return "Weekly (all models)"
+        case .weeklyOpus: return "Weekly (Opus)"
+        case .weeklySonnet: return "Weekly (Sonnet)"
+        }
     }
 
-    /// "resets in 42m" or "resets in 1h 12m" — returns "–" if nil or past
+    public var isWeekly: Bool { self != .session }
+}
+
+// MARK: - UsageBucket
+
+public struct UsageBucket: Equatable {
+    public let kind: BucketKind
+    public let percentUsed: Double   // 0.0 to 1.0
+    public let resetsAt: Date?
+    public let lockedReason: String?
+
+    public init(kind: BucketKind, percentUsed: Double, resetsAt: Date?, lockedReason: String?) {
+        self.kind = kind
+        self.percentUsed = percentUsed
+        self.resetsAt = resetsAt
+        self.lockedReason = lockedReason
+    }
+
+    /// "resets in 42m" or "resets in 1h 12m"; "–" if nil or past
     public var resetsInDisplay: String {
         guard let date = resetsAt else { return "–" }
         let remaining = date.timeIntervalSinceNow
@@ -72,12 +97,11 @@ public struct UsageStat {
         }
     }
 
-    /// Color state for this individual stat's progress bar
     public var barColorState: RingColorState {
         .from(percent: percentUsed)
     }
 
-    /// "Fri 9:00 AM" — returns nil if resetsAt is nil
+    /// "Fri 9:00 AM"; nil if resetsAt is nil
     public var resetsAtDisplay: String? {
         guard let date = resetsAt else { return nil }
         let formatter = DateFormatter()
@@ -86,46 +110,46 @@ public struct UsageStat {
     }
 }
 
+// MARK: - ExtraUsage
+
+public struct ExtraUsage: Equatable {
+    public let isEnabled: Bool
+    public let percentUsed: Double?   // 0.0 to 1.0 when the API reports utilization
+
+    public init(isEnabled: Bool, percentUsed: Double?) {
+        self.isEnabled = isEnabled
+        self.percentUsed = percentUsed
+    }
+}
+
 // MARK: - UsageData
 
 public struct UsageData {
-    public let currentSession: UsageStat
-    public let weeklyAllModels: UsageStat
-    public let weeklySonnetOnly: UsageStat
+    /// Only the buckets the API returned with a utilization, in BucketKind order.
+    public let buckets: [UsageBucket]
+    public let extraUsage: ExtraUsage?
     public var lastUpdated: Date
 
-    public init(
-        currentSession: UsageStat,
-        weeklyAllModels: UsageStat,
-        weeklySonnetOnly: UsageStat,
-        lastUpdated: Date = Date()
-    ) {
-        self.currentSession = currentSession
-        self.weeklyAllModels = weeklyAllModels
-        self.weeklySonnetOnly = weeklySonnetOnly
+    public init(buckets: [UsageBucket], extraUsage: ExtraUsage?, lastUpdated: Date = Date()) {
+        self.buckets = buckets
+        self.extraUsage = extraUsage
         self.lastUpdated = lastUpdated
     }
 
-    /// Highest usage % across all three metrics
-    public var ringValue: Double {
-        max(currentSession.percentUsed, weeklyAllModels.percentUsed, weeklySonnetOnly.percentUsed)
+    public func bucket(_ kind: BucketKind) -> UsageBucket? {
+        buckets.first { $0.kind == kind }
     }
 
-    public var ringColorState: RingColorState {
-        .from(percent: ringValue)
-    }
-
-    /// Ring value for a specific metric mode
+    /// Ring value for a metric mode; 0 when the account has no such bucket.
     public func ringValue(for mode: RingMetricMode) -> Double {
         switch mode {
         case .session:
-            return currentSession.percentUsed
+            return bucket(.session)?.percentUsed ?? 0.0
         case .weekly:
-            return max(weeklyAllModels.percentUsed, weeklySonnetOnly.percentUsed)
+            return buckets.filter { $0.kind.isWeekly }.map(\.percentUsed).max() ?? 0.0
         }
     }
 
-    /// Ring color state for a specific metric mode
     public func ringColorState(for mode: RingMetricMode) -> RingColorState {
         .from(percent: ringValue(for: mode))
     }
@@ -133,23 +157,31 @@ public struct UsageData {
 
 // MARK: - JSON Decoding
 
-private struct RawUsageStat: Codable {
-    let utilization: Double
-    let resets_at: Date
+private struct RawBucket: Decodable {
+    let utilization: Double?
+    let resets_at: Date?
+    let locked_reason: String?
 }
 
-private struct RawUsageResponse: Codable {
-    let five_hour: RawUsageStat
-    let seven_day: RawUsageStat
-    let seven_day_sonnet: RawUsageStat?
+private struct RawExtraUsage: Decodable {
+    let is_enabled: Bool?
+    let utilization: Double?
+}
+
+/// Every key optional: plans differ in which buckets they return, and unknown keys are ignored.
+private struct RawUsageResponse: Decodable {
+    let five_hour: RawBucket?
+    let seven_day: RawBucket?
+    let seven_day_opus: RawBucket?
+    let seven_day_sonnet: RawBucket?
+    let extra_usage: RawExtraUsage?
 }
 
 extension UsageData {
-    /// Decode from raw API JSON — handles fractional-second ISO8601 dates
+    /// Decode from raw API JSON; handles fractional and whole-second ISO8601 dates.
     public static func decode(from data: Data) throws -> UsageData {
         let decoder = JSONDecoder()
 
-        // Try fractional seconds first, then fall back to whole seconds
         let fractionalFormatter = ISO8601DateFormatter()
         fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
@@ -159,39 +191,34 @@ extension UsageData {
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let string = try container.decode(String.self)
-
-            if let date = fractionalFormatter.date(from: string) {
-                return date
-            }
-            if let date = plainFormatter.date(from: string) {
-                return date
-            }
-            throw DecodingError.dataCorruptedError(
-                in: container,
-                debugDescription: "Cannot decode date from: \(string)"
-            )
+            if let date = fractionalFormatter.date(from: string) { return date }
+            if let date = plainFormatter.date(from: string) { return date }
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date from: \(string)")
         }
 
         let raw = try decoder.decode(RawUsageResponse.self, from: data)
 
-        let currentSession = UsageStat(
-            percentUsed: raw.five_hour.utilization / 100.0,
-            resetsAt: raw.five_hour.resets_at
-        )
-        let weeklyAllModels = UsageStat(
-            percentUsed: raw.seven_day.utilization / 100.0,
-            resetsAt: raw.seven_day.resets_at
-        )
-        let weeklySonnetOnly = UsageStat(
-            percentUsed: (raw.seven_day_sonnet?.utilization ?? 0.0) / 100.0,
-            resetsAt: raw.seven_day_sonnet?.resets_at
-        )
+        let pairs: [(BucketKind, RawBucket?)] = [
+            (.session, raw.five_hour),
+            (.weeklyAll, raw.seven_day),
+            (.weeklyOpus, raw.seven_day_opus),
+            (.weeklySonnet, raw.seven_day_sonnet),
+        ]
+        var buckets: [UsageBucket] = []
+        for (kind, rawBucket) in pairs {
+            guard let rawBucket, let utilization = rawBucket.utilization else { continue }
+            buckets.append(UsageBucket(
+                kind: kind,
+                percentUsed: utilization / 100.0,
+                resetsAt: rawBucket.resets_at,
+                lockedReason: rawBucket.locked_reason
+            ))
+        }
 
-        return UsageData(
-            currentSession: currentSession,
-            weeklyAllModels: weeklyAllModels,
-            weeklySonnetOnly: weeklySonnetOnly,
-            lastUpdated: Date()
-        )
+        let extra = raw.extra_usage.map {
+            ExtraUsage(isEnabled: $0.is_enabled ?? false, percentUsed: $0.utilization.map { $0 / 100.0 })
+        }
+
+        return UsageData(buckets: buckets, extraUsage: extra, lastUpdated: Date())
     }
 }
