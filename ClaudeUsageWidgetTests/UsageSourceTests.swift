@@ -82,6 +82,20 @@ final class UsageSourceTests: XCTestCase {
         }
     }
 
+    func test_claudeCodeProvider_cachesInitialToken_andRereadsNearExpiry() async throws {
+        let reader = FakeClaudeCodeCredentials(token: ClaudeCodeToken(accessToken: "cc-new", expiresAt: Date().addingTimeInterval(3600), subscriptionType: nil))
+        let fresh = ClaudeCodeToken(accessToken: "cc", expiresAt: Date().addingTimeInterval(3600), subscriptionType: nil)
+        let provider = ClaudeCodeTokenProvider(reader: reader, initial: fresh)
+        let first = try await provider.accessToken()
+        XCTAssertEqual(first, "cc")
+        XCTAssertEqual(reader.reads, 0)
+        let nearExpiry = ClaudeCodeToken(accessToken: "cc", expiresAt: Date().addingTimeInterval(120), subscriptionType: nil)
+        let provider2 = ClaudeCodeTokenProvider(reader: reader, initial: nearExpiry)
+        let second = try await provider2.accessToken()
+        XCTAssertEqual(second, "cc-new")
+        XCTAssertEqual(reader.reads, 1)
+    }
+
     func test_oauthSource_401_refreshesOnce_andRetries() async throws {
         let store = InMemoryTokenStore(tokens: tokens(expiringIn: 3600))
         StubURLProtocol.handler = { request in

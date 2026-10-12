@@ -24,12 +24,14 @@ final class WebSessionAuth {
         didSet {
             guard oldValue != state else { return }
             delegate?.webSessionAuth(self, didChange: state)
-            if state == .unreachable { scheduleRetry() } else { cancelRetry() }
+            if state == .unreachable && retriesWhenUnreachable { scheduleRetry() } else { cancelRetry() }
         }
     }
 
     /// While unreachable, claude.ai is asked again on this interval (tests shorten it).
     var unreachableRetryInterval: TimeInterval = 60
+    /// False when an owner (AuthManager) drives the retries itself.
+    var retriesWhenUnreachable = true
     private var retryTimer: Timer?
     var isRetryScheduled: Bool { retryTimer != nil }
 
@@ -135,7 +137,7 @@ final class WebSessionAuth {
                 guard let self else { return }
                 self.retryTimer = nil
                 await self.checkAuthStatus()
-                if self.state == .unreachable { self.scheduleRetry() }   // no transition, so didSet did not run
+                if self.state == .unreachable && self.retriesWhenUnreachable { self.scheduleRetry() }   // no transition, so didSet did not run
             }
         }
     }

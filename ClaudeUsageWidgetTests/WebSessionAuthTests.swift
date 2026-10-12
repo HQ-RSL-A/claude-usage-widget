@@ -141,6 +141,14 @@ final class WebSessionAuthTests: XCTestCase {
         XCTAssertEqual(api.paths.count, 2)
     }
 
+    func test_unreachable_retryCanBeDisabledByTheOwner() async {
+        manager.retriesWhenUnreachable = false
+        api.responses = [.failure(.transport("offline"))]
+        await manager.checkAuthStatus()
+        XCTAssertEqual(manager.state, .unreachable)
+        XCTAssertFalse(manager.isRetryScheduled)
+    }
+
     func test_unreachable_retryThatFailsAgain_reschedules() async {
         manager.unreachableRetryInterval = 0.05
         api.responses = [.failure(.transport("offline")), .failure(.transport("still offline"))]

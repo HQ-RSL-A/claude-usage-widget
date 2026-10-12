@@ -7,7 +7,11 @@ final class AuthManagerTests: XCTestCase {
 
     private final class SpyDelegate: AuthManagerDelegate {
         var states: [AuthState] = []
-        func authManager(_ manager: AuthManager, didChange state: AuthState) { states.append(state) }
+        var onChange: ((AuthState) -> Void)?
+        func authManager(_ manager: AuthManager, didChange state: AuthState) {
+            states.append(state)
+            onChange?(state)
+        }
     }
 
     private static let suite = "io.rsla.ClaudeUsageWidget.tests.auth"
@@ -168,6 +172,78 @@ final class AuthManagerTests: XCTestCase {
         await manager.checkAuthStatus()
         manager.sessionDidExpire()
         XCTAssertEqual(manager.state, .signedOut(claudeCodeAvailable: false))
+    }
+
+    // MARK: - Review fix pass
+
+    func test_webSessionEvent_whileAnotherIdentityActive_isIgnored() async {
+        // v0.3.0 upgrader: cookies present, claude.ai unreachable at launch, Claude Code appears later.
+        hasCookies = true
+        webApi.responses = [.failure(.transport("offline"))]
+        await manager.checkAuthStatus()
+        XCTAssertEqual(manager.state, .unreachable)
+        XCTAssertFalse(web.isRetryScheduled)   // the coordinator owns the retry
+        claudeCode.token = validClaudeCode()
+        await manager.checkAuthStatus()
+        guard case .signedIn(.claudeCode, _) = manager.state else { return XCTFail("\(manager.state)") }
+        webApi.responses = [.success(Fixtures.sessionInvalid403)]
+        _ = await web.verifySession()           // a late web-session event
+        guard case .signedIn(.claudeCode, _) = manager.state else { return XCTFail("\(manager.state)") }
+        XCTAssertEqual(web.loginWindowRequests, 0)
+    }
+
+    func test_claudeCodeRoute_doesNotRereadKeychainEveryPoll() async throws {
+        claudeCode.token = validClaudeCode()
+        await manager.checkAuthStatus()
+        let readsAfterResolve = claudeCode.reads
+        let source = try XCTUnwrap(manager.usageSource)
+        _ = try await source.fetchUsage()
+        _ = try await source.fetchUsage()
+        XCTAssertEqual(claudeCode.reads, readsAfterResolve)
+    }
+
+    func test_claudeCodeExpired_setsMessage_andRechecksOnInterval() async {
+        manager.claudeCodeRecheckInterval = 0.05
+        claudeCode.token = ClaudeCodeToken(accessToken: "old", expiresAt: Date().addingTimeInterval(-10), subscriptionType: nil)
+        await manager.checkAuthStatus()
+        XCTAssertEqual(manager.state, .signedOut(claudeCodeAvailable: true))
+        XCTAssertEqual(manager.signInMessage, "Claude Code's sign-in has expired. Open Claude Code once, or sign in with your browser")
+        claudeCode.token = validClaudeCode()
+        let signedIn = expectation(description: "recheck signs in")
+        spy.onChange = { if case .signedIn(.claudeCode, _) = $0 { signedIn.fulfill() } }
+        await fulfillment(of: [signedIn], timeout: 3)
+        XCTAssertNil(manager.signInMessage)
+    }
+
+    func test_signOut_wipesWebSession_evenWhenNeverEnabled() async {
+        claudeCode.token = validClaudeCode()
+        await manager.checkAuthStatus()
+        manager.signOut()
+        let api = webApi!
+        let wiped = expectation(description: "web session wiped")
+        wiped.assertForOverFulfill = false
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in
+            if api.resetCount >= 1 { wiped.fulfill() }
+        }
+        await fulfillment(of: [wiped], timeout: 3)
+        timer.invalidate()
+    }
+
+    func test_ownTokenRefreshServerError_isUnreachable_andKeepsToken() async {
+        store.tokens = TokenSet(accessToken: "a", refreshToken: "r", expiresAt: Date().addingTimeInterval(10), scope: nil)
+        StubURLProtocol.handler = { request in request.url == OAuthConfig.tokenURL ? (503, Data()) : (200, Data(Fixtures.profileJSON.utf8)) }
+        await manager.checkAuthStatus()
+        XCTAssertEqual(manager.state, .unreachable)
+        XCTAssertNotNil(store.tokens)
+    }
+
+    func test_browserSignIn_doesNotReenableClaudeCode_afterSignOut() async {
+        claudeCode.token = validClaudeCode()
+        await manager.checkAuthStatus()
+        manager.signOut()
+        await manager.signInWithBrowser()
+        guard case .signedIn(.ownToken, _) = manager.state else { return XCTFail("\(manager.state)") }
+        XCTAssertTrue(defaults.bool(forKey: AuthManager.optOutKey))
     }
 
     func test_transportFailureOnOwnToken_isUnreachable_andRetries() async {

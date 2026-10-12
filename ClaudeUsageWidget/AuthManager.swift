@@ -35,6 +35,7 @@ final class AuthManager {
     static let optOutKey = "claudeCodeTokenOptOut"
     static let deniedKey = "claudeCodeTokenDenied"
     static let webSessionKey = "webSessionEnabled"
+    static let claudeCodeExpiredMessage = "Claude Code's sign-in has expired. Open Claude Code once, or sign in with your browser"
 
     weak var delegate: AuthManagerDelegate?
 
@@ -43,6 +44,7 @@ final class AuthManager {
             guard oldValue != state else { return }
             delegate?.authManager(self, didChange: state)
             if state == .unreachable { scheduleRetry() } else { cancelRetry() }
+            if waitsForClaudeCode { scheduleClaudeCodeRecheck() } else { cancelClaudeCodeRecheck() }
         }
     }
 
@@ -52,23 +54,31 @@ final class AuthManager {
     private(set) var signInMessage: String?
 
     var unreachableRetryInterval: TimeInterval = 60
+    /// While Claude Code's token is expired, look again on this interval (Claude Code refreshes it when it runs).
+    var claudeCodeRecheckInterval: TimeInterval = 300
     var browserTimeout: TimeInterval = 300
     var isRetryScheduled: Bool { retryTimer != nil }
 
     private let deps: Dependencies
     private var claudeCodeItemExists = false
+    /// True while the web session is the identity in use; web-session events are ignored otherwise.
+    private var webSessionActive = false
     private var browserFlow: CallbackServing?
     private var retryTimer: Timer?
+    private var recheckTimer: Timer?
 
     init(dependencies: Dependencies) {
         deps = dependencies
         deps.webSession.delegate = self
+        deps.webSession.retriesWhenUnreachable = false   // this coordinator owns retries
     }
 
     // MARK: - Resolution
 
     func checkAuthStatus() async {
         claudeCodeItemExists = deps.claudeCode.exists()   // attribute query, never prompts
+        webSessionActive = false
+        signInMessage = nil
         if await resolveOwnToken() { return }
         if await resolveClaudeCode() { return }
         if await resolveWebSession() { return }
@@ -87,12 +97,17 @@ final class AuthManager {
             return true
         } catch ClaudeAPIError.sessionExpired {
             return false            // no own token, or the refresh was refused (store already cleared)
-        } catch ClaudeAPIError.transport {
-            usageSource = nil
-            state = .unreachable
-            return true
+        } catch let error as ClaudeAPIError {
+            switch error {
+            case .transport, .server, .forbidden, .http:
+                usageSource = nil   // the token is fine, the network or Anthropic is not: keep it and retry
+                state = .unreachable
+                return true
+            default:
+                return false        // unreadable store or undecodable token: fall through to the next source
+            }
         } catch {
-            return false            // unreadable store: fall through to the next source
+            return false
         }
     }
 
@@ -104,9 +119,12 @@ final class AuthManager {
                 return false
             }
             claudeCodeItemExists = true
-            guard token.isValid else { return false }
+            guard token.isValid else {
+                signInMessage = Self.claudeCodeExpiredMessage
+                return false
+            }
             let profile = try? await deps.oauth.profile(accessToken: token.accessToken)
-            usageSource = OAuthUsageSource(client: deps.oauth, tokens: ClaudeCodeTokenProvider(reader: deps.claudeCode), identity: .claudeCode)
+            usageSource = OAuthUsageSource(client: deps.oauth, tokens: ClaudeCodeTokenProvider(reader: deps.claudeCode, initial: token), identity: .claudeCode)
             state = .signedIn(.claudeCode, profile)
             return true
         } catch {
@@ -130,23 +148,28 @@ final class AuthManager {
     private func apply(webState: WebSessionState) -> Bool {
         switch webState {
         case .signedIn(let org, let chatOrgCount):
+            webSessionActive = true
             usageSource = WebSessionUsageSource(client: deps.webSession.client, orgId: org.uuid)
             let profile = chatOrgCount > 1 ? Profile(email: nil, displayName: nil, organizationName: org.displayName, organizationType: nil) : nil
             state = .signedIn(.webSession, profile)
             return true
         case .noChatOrg:
+            webSessionActive = true
             usageSource = nil
             state = .noChatOrg
             return true
         case .sessionExpired:
+            webSessionActive = true
             usageSource = nil
             state = .sessionExpired(.webSession)
             return true
         case .unreachable:
+            webSessionActive = true
             usageSource = nil
             state = .unreachable
             return true
         case .signedOut, .unknown:
+            webSessionActive = false
             return false
         }
     }
@@ -170,7 +193,6 @@ final class AuthManager {
             browserFlow = nil
             let tokens = try await deps.oauth.exchange(code: code, verifier: pkce.verifier, redirectURI: redirectURI, state: stateToken)
             try deps.tokenStore.save(tokens)
-            deps.defaults.set(false, forKey: Self.optOutKey)
             await checkAuthStatus()
         } catch {
             server.stop()
@@ -224,10 +246,9 @@ final class AuthManager {
         cancelBrowserSignIn()
         try? deps.tokenStore.clear()
         deps.defaults.set(true, forKey: Self.optOutKey)
-        if deps.defaults.bool(forKey: Self.webSessionKey) {
-            deps.defaults.set(false, forKey: Self.webSessionKey)
-            deps.webSession.signOut(showLoginWindow: false)
-        }
+        deps.defaults.set(false, forKey: Self.webSessionKey)
+        deps.webSession.signOut(showLoginWindow: false)   // always: v0.3.0 cookies may exist even if never used here
+        webSessionActive = false
         usageSource = nil
         signInMessage = nil
         state = .signedOut(claudeCodeAvailable: claudeCodeItemExists)
@@ -251,13 +272,41 @@ final class AuthManager {
         retryTimer?.invalidate()
         retryTimer = nil
     }
+
+    // MARK: - Claude Code recheck
+
+    /// Signed out or expired with a Claude Code item present and not opted out: Claude Code may refresh it any time.
+    private var waitsForClaudeCode: Bool {
+        guard claudeCodeItemExists, !deps.defaults.bool(forKey: Self.optOutKey), !deps.defaults.bool(forKey: Self.deniedKey) else { return false }
+        switch state {
+        case .signedOut, .sessionExpired(.claudeCode): return true
+        default: return false
+        }
+    }
+
+    private func scheduleClaudeCodeRecheck() {
+        recheckTimer?.invalidate()
+        recheckTimer = Timer.scheduledTimer(withTimeInterval: claudeCodeRecheckInterval, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.recheckTimer = nil
+                await self.checkAuthStatus()
+                if self.waitsForClaudeCode { self.scheduleClaudeCodeRecheck() }   // no transition, so didSet did not run
+            }
+        }
+    }
+
+    private func cancelClaudeCodeRecheck() {
+        recheckTimer?.invalidate()
+        recheckTimer = nil
+    }
 }
 
 // MARK: - WebSessionAuthDelegate
 
 extension AuthManager: WebSessionAuthDelegate {
     func webSessionAuth(_ auth: WebSessionAuth, didChange webState: WebSessionState) {
-        guard deps.defaults.bool(forKey: Self.webSessionKey) else { return }
+        guard webSessionActive, deps.defaults.bool(forKey: Self.webSessionKey) else { return }
         if !apply(webState: webState) {
             usageSource = nil
             state = .signedOut(claudeCodeAvailable: claudeCodeItemExists)

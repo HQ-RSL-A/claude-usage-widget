@@ -70,19 +70,33 @@ final class OwnTokenProvider: BearerTokenProvider {
 @MainActor
 final class ClaudeCodeTokenProvider: BearerTokenProvider {
     private let reader: ClaudeCodeCredentialsReading
+    private let refreshLeeway: TimeInterval = 300
+    private var cached: ClaudeCodeToken?
 
-    init(reader: ClaudeCodeCredentialsReading) {
+    /// `initial` is the token the caller already read, so the Keychain is not touched again on the first poll.
+    init(reader: ClaudeCodeCredentialsReading, initial: ClaudeCodeToken? = nil) {
         self.reader = reader
+        self.cached = initial
     }
 
+    /// Each Keychain read can prompt (unless the user chose Always Allow), so the token is cached until it nears expiry.
     func accessToken() async throws -> String {
-        guard let token = try reader.read(), token.isValid else { throw ClaudeAPIError.sessionExpired }
-        return token.accessToken
+        if let cached, cached.expiresAt.timeIntervalSinceNow > refreshLeeway { return cached.accessToken }
+        return try reload()
     }
 
     /// Claude Code may have refreshed since the last read; read again, never refresh it ourselves.
     func refreshAfterUnauthorized() async throws -> String {
-        try await accessToken()
+        try reload()
+    }
+
+    private func reload() throws -> String {
+        guard let token = try reader.read(), token.isValid else {
+            cached = nil
+            throw ClaudeAPIError.sessionExpired
+        }
+        cached = token
+        return token.accessToken
     }
 }
 
