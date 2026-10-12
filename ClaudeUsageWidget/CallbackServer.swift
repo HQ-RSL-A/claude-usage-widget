@@ -48,7 +48,7 @@ final class CallbackServer: CallbackServing {
         let timeoutTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            await self?.finishWaiting(with: .failure(ClaudeAPIError.callbackTimeout))
+            self?.finishWaiting(with: .failure(ClaudeAPIError.callbackTimeout))
         }
         defer { timeoutTask.cancel() }
         return try await withCheckedThrowingContinuation { continuation in

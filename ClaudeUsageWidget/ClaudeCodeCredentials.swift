@@ -26,6 +26,8 @@ struct ClaudeCodeToken: Equatable {
 }
 
 protocol ClaudeCodeCredentialsReading: AnyObject {
+    /// Whether Claude Code's item is in the Keychain at all. Never prompts.
+    func exists() -> Bool
     /// nil when Claude Code never signed in on this Mac. Throws .keychain when macOS refused (the user clicked Deny).
     func read() throws -> ClaudeCodeToken?
 }
@@ -36,6 +38,10 @@ final class KeychainClaudeCodeCredentials: ClaudeCodeCredentialsReading {
 
     init(service: String = KeychainClaudeCodeCredentials.defaultService) {
         self.service = service
+    }
+
+    func exists() -> Bool {
+        KeychainItem.exists(service: service)
     }
 
     func read() throws -> ClaudeCodeToken? {

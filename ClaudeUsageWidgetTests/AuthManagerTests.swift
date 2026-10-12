@@ -1,4 +1,5 @@
 import XCTest
+import WebKit
 @testable import ClaudeUsageWidget
 
 @MainActor
@@ -6,172 +7,175 @@ final class AuthManagerTests: XCTestCase {
 
     private final class SpyDelegate: AuthManagerDelegate {
         var states: [AuthState] = []
-        var onChange: ((AuthState) -> Void)?
-        func authManager(_ manager: AuthManager, didChange state: AuthState) {
-            states.append(state)
-            onChange?(state)
-        }
+        func authManager(_ manager: AuthManager, didChange state: AuthState) { states.append(state) }
     }
 
-    private var api: FakeClaudeAPI!
+    private static let suite = "io.rsla.ClaudeUsageWidget.tests.auth"
+
+    private var oauth: OAuthClient!
+    private var store: InMemoryTokenStore!
+    private var claudeCode: FakeClaudeCodeCredentials!
+    private var webApi: FakeClaudeAPI!
+    private var web: WebSessionAuth!
+    private var defaults: UserDefaults!
+    private var callback: FakeCallbackServer!
+    private var openedURLs: [URL] = []
+    private var hasCookies = false
     private var manager: AuthManager!
     private var spy: SpyDelegate!
 
     override func setUp() {
         super.setUp()
-        api = FakeClaudeAPI()
-        manager = AuthManager(client: api, dataStore: .nonPersistent())
-        manager.presentsLoginWindow = false
+        StubURLProtocol.reset()
+        StubURLProtocol.handler = { request in
+            if request.url == OAuthConfig.profileURL { return (200, Data(Fixtures.profileJSON.utf8)) }
+            if request.url == OAuthConfig.tokenURL { return (200, Data(Fixtures.tokenResponseJSON.utf8)) }
+            return (200, Data(Fixtures.usageMax20xJSON.utf8))
+        }
+        oauth = OAuthClient(session: StubURLProtocol.session())
+        store = InMemoryTokenStore()
+        claudeCode = FakeClaudeCodeCredentials()
+        webApi = FakeClaudeAPI()
+        web = WebSessionAuth(client: webApi, dataStore: .nonPersistent())
+        web.presentsLoginWindow = false
+        defaults = UserDefaults(suiteName: Self.suite)!
+        defaults.removePersistentDomain(forName: Self.suite)
+        callback = FakeCallbackServer()
+        openedURLs = []
+        hasCookies = false
+        manager = makeManager(oauth: oauth)
         spy = SpyDelegate()
         manager.delegate = spy
     }
 
-    func test_startsUnknown() {
-        XCTAssertEqual(manager.state, .unknown)
+    private func makeManager(oauth: OAuthClient) -> AuthManager {
+        AuthManager(dependencies: .init(
+            oauth: oauth, tokenStore: store, claudeCode: claudeCode, webSession: web, defaults: defaults,
+            makeCallbackServer: { [unowned self] in self.callback },
+            openURL: { [unowned self] in self.openedURLs.append($0) },
+            hasWebSessionCookies: { [unowned self] in self.hasCookies }
+        ))
     }
 
-    func test_verify_validSession_signsInToChatOrg_notConsoleOrg() async {
-        api.responses = [.success(Fixtures.response(200, Fixtures.twoOrgsJSON))]
-        let state = await manager.verifySession()
-        guard case .signedIn(let org, let count) = state else { return XCTFail("\(state)") }
-        XCTAssertEqual(org.uuid, "chat-org")
-        XCTAssertEqual(count, 1)
-        XCTAssertEqual(api.paths, ["/api/organizations"])
-        XCTAssertEqual(spy.states, [state])
-    }
+    private func validTokens() -> TokenSet { TokenSet(accessToken: "access-1", refreshToken: "r", expiresAt: Date().addingTimeInterval(3600), scope: nil) }
+    private func validClaudeCode() -> ClaudeCodeToken { ClaudeCodeToken(accessToken: "cc", expiresAt: Date().addingTimeInterval(3600), subscriptionType: "max") }
 
-    func test_verify_twoChatOrgs_lastActiveWins_andCountIsTwo() async {
-        api.responses = [.success(Fixtures.response(200, Fixtures.twoChatOrgsJSON))]
-        api.lastActiveOrg = "chat-b"
-        let state = await manager.verifySession()
-        guard case .signedIn(let org, let count) = state else { return XCTFail("\(state)") }
-        XCTAssertEqual(org.uuid, "chat-b")
-        XCTAssertEqual(count, 2)
-    }
-
-    func test_verify_consoleOnly_isNoChatOrg() async {
-        api.responses = [.success(Fixtures.response(200, Fixtures.consoleOnlyJSON))]
-        let state = await manager.verifySession()
-        XCTAssertEqual(state, .noChatOrg)
-    }
-
-    func test_verify_emptyOrgList_isNoChatOrg() async {
-        api.responses = [.success(Fixtures.response(200, Fixtures.emptyOrgsJSON))]
-        let state = await manager.verifySession()
-        XCTAssertEqual(state, .noChatOrg)
-    }
-
-    func test_checkAuthStatus_noSession_isSignedOut_andRequestsLoginOnce() async {
-        api.responses = [.success(Fixtures.sessionInvalid403)]
+    func test_nothingAvailable_isSignedOut_withoutClaudeCode() async {
         await manager.checkAuthStatus()
-        XCTAssertEqual(manager.state, .signedOut)
-        XCTAssertEqual(manager.loginWindowRequests, 1)
+        XCTAssertEqual(manager.state, .signedOut(claudeCodeAvailable: false))
+        XCTAssertNil(manager.usageSource)
     }
 
-    func test_checkAuthStatus_transportFailure_isUnreachable_noLoginWindow() async {
-        api.responses = [.failure(.transport("offline"))]
+    func test_ownToken_wins_andLoadsProfile() async {
+        store.tokens = validTokens()
+        claudeCode.token = validClaudeCode()
         await manager.checkAuthStatus()
-        XCTAssertEqual(manager.state, .unreachable)
-        XCTAssertEqual(manager.loginWindowRequests, 0)
+        XCTAssertEqual(manager.state, .signedIn(.ownToken, Profile(email: "test@example.com", displayName: "Test", organizationName: "Test's Organization", organizationType: "claude_max")))
+        XCTAssertEqual(manager.usageSource?.identity, .ownToken)
     }
 
-    func test_checkAuthStatus_serverError_isUnreachable() async {
-        api.responses = [.success(Fixtures.server500)]
+    func test_claudeCode_usedWhenNoOwnToken() async {
+        claudeCode.token = validClaudeCode()
         await manager.checkAuthStatus()
-        XCTAssertEqual(manager.state, .unreachable)
+        guard case .signedIn(.claudeCode, let profile) = manager.state else { return XCTFail("\(manager.state)") }
+        XCTAssertEqual(profile?.email, "test@example.com")
+        XCTAssertEqual(manager.usageSource?.identity, .claudeCode)
     }
 
-    func test_verify_sessionInvalidWhileSignedIn_isSessionExpired() async {
-        api.responses = [.success(Fixtures.response(200, Fixtures.twoOrgsJSON)), .success(Fixtures.sessionInvalid403)]
-        _ = await manager.verifySession()
-        let state = await manager.verifySession()
-        XCTAssertEqual(state, .sessionExpired)
-    }
-
-    func test_sessionDidExpire_twice_opensLoginOnce() async {
-        api.responses = [.success(Fixtures.response(200, Fixtures.twoOrgsJSON))]
-        _ = await manager.verifySession()
-        manager.sessionDidExpire()
-        manager.sessionDidExpire()
-        XCTAssertEqual(manager.state, .sessionExpired)
-        XCTAssertEqual(manager.loginWindowRequests, 1)
-    }
-
-    func test_signInAfterExpiry_allowsNextExpiryToOpenLoginAgain() async {
-        api.responses = [
-            .success(Fixtures.response(200, Fixtures.twoOrgsJSON)),
-            .success(Fixtures.response(200, Fixtures.twoOrgsJSON)),
-        ]
-        _ = await manager.verifySession()
-        manager.sessionDidExpire()
-        _ = await manager.verifySession()
-        manager.sessionDidExpire()
-        XCTAssertEqual(manager.loginWindowRequests, 2)
-    }
-
-    func test_loginWindowSawCandidate_falseUntilSessionExists() async {
-        api.responses = [.success(Fixtures.sessionInvalid403), .success(Fixtures.response(200, Fixtures.twoOrgsJSON))]
-        let first = await manager.loginWindowSawCandidate()
-        let second = await manager.loginWindowSawCandidate()
-        XCTAssertFalse(first)
-        XCTAssertTrue(second)
-        guard case .signedIn = manager.state else { return XCTFail("\(manager.state)") }
-    }
-
-    func test_sessionDidExpire_whenNotSignedIn_isIgnored() async {
-        api.responses = [.success(Fixtures.sessionInvalid403)]
+    func test_claudeCodeExpired_isSignedOut_butAvailable() async {
+        claudeCode.token = ClaudeCodeToken(accessToken: "cc", expiresAt: Date().addingTimeInterval(-10), subscriptionType: nil)
         await manager.checkAuthStatus()
-        XCTAssertEqual(manager.state, .signedOut)
-        XCTAssertEqual(manager.loginWindowRequests, 1)
-        manager.sessionDidExpire()   // a stale poll finishing after sign-out
-        XCTAssertEqual(manager.state, .signedOut)
-        XCTAssertEqual(manager.loginWindowRequests, 1)
+        XCTAssertEqual(manager.state, .signedOut(claudeCodeAvailable: true))
     }
 
-    func test_unreachable_schedulesRetry_andRecoversWhenClaudeAnswers() async {
-        manager.unreachableRetryInterval = 0.05
-        api.responses = [.failure(.transport("offline")), .success(Fixtures.response(200, Fixtures.twoOrgsJSON))]
+    func test_claudeCodeDenied_isRememberedAcrossChecks() async {
+        claudeCode.failure = .keychain(-25293)
+        await manager.checkAuthStatus()
+        XCTAssertEqual(manager.state, .signedOut(claudeCodeAvailable: true))
+        XCTAssertTrue(defaults.bool(forKey: AuthManager.deniedKey))
+        await manager.checkAuthStatus()
+        XCTAssertEqual(claudeCode.reads, 1)   // no second prompt
+        claudeCode.failure = nil
+        claudeCode.token = validClaudeCode()
+        await manager.useClaudeCodeToken()
+        guard case .signedIn(.claudeCode, _) = manager.state else { return XCTFail("\(manager.state)") }
+    }
+
+    func test_upgrade_withWebCookies_enablesWebSession() async {
+        hasCookies = true
+        webApi.responses = [.success(Fixtures.response(200, Fixtures.twoOrgsJSON))]
+        await manager.checkAuthStatus()
+        XCTAssertTrue(defaults.bool(forKey: AuthManager.webSessionKey))
+        guard case .signedIn(.webSession, _) = manager.state else { return XCTFail("\(manager.state)") }
+        XCTAssertEqual(manager.usageSource?.identity, .webSession)
+    }
+
+    func test_browserSignIn_savesTokens_andSignsIn() async {
+        await manager.signInWithBrowser()
+        XCTAssertEqual(callback.expectedState?.isEmpty, false)
+        let opened = openedURLs.first
+        XCTAssertEqual(opened?.host, "claude.com")
+        let items = opened.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems } ?? []
+        XCTAssertEqual(items.first { $0.name == "redirect_uri" }?.value, "http://localhost:4242/callback")
+        XCTAssertEqual(items.first { $0.name == "state" }?.value, callback.expectedState)
+        XCTAssertEqual(store.tokens?.accessToken, "access-1")
+        XCTAssertTrue(callback.stopped)
+        guard case .signedIn(.ownToken, _) = manager.state else { return XCTFail("\(manager.state)") }
+        XCTAssertTrue(spy.states.contains(.signingIn))
+    }
+
+    func test_browserSignIn_timeout_isSignedOut_withMessage() async {
+        callback.codeToDeliver = .failure(.callbackTimeout)
+        await manager.signInWithBrowser()
+        XCTAssertEqual(manager.state, .signedOut(claudeCodeAvailable: false))
+        XCTAssertEqual(manager.signInMessage, "Sign-in timed out, try again")
+        XCTAssertTrue(callback.stopped)
+    }
+
+    func test_signOut_duringBrowserFlow_cancelsIt() async {
+        callback.hold = true
+        let flow = Task { await self.manager.signInWithBrowser() }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(manager.state, .signingIn)
+        manager.signOut()
+        await flow.value
+        XCTAssertTrue(callback.stopped)
+        XCTAssertEqual(manager.state, .signedOut(claudeCodeAvailable: false))
+    }
+
+    func test_signOut_clearsOwnToken_andOptsOutOfClaudeCode() async {
+        store.tokens = validTokens()
+        claudeCode.token = validClaudeCode()
+        await manager.checkAuthStatus()
+        manager.signOut()
+        XCTAssertNil(store.tokens)
+        XCTAssertEqual(manager.state, .signedOut(claudeCodeAvailable: true))
+        await manager.checkAuthStatus()
+        XCTAssertEqual(manager.state, .signedOut(claudeCodeAvailable: true))   // opted out, Claude Code not used
+        XCTAssertNil(manager.usageSource)
+    }
+
+    func test_sessionDidExpire_ownToken_clearsStore() async {
+        store.tokens = validTokens()
+        await manager.checkAuthStatus()
+        manager.sessionDidExpire()
+        XCTAssertEqual(manager.state, .sessionExpired(.ownToken))
+        XCTAssertNil(store.tokens)
+        XCTAssertNil(manager.usageSource)
+    }
+
+    func test_sessionDidExpire_whenSignedOut_isIgnored() async {
+        await manager.checkAuthStatus()
+        manager.sessionDidExpire()
+        XCTAssertEqual(manager.state, .signedOut(claudeCodeAvailable: false))
+    }
+
+    func test_transportFailureOnOwnToken_isUnreachable_andRetries() async {
+        store.tokens = TokenSet(accessToken: "a", refreshToken: "r", expiresAt: Date().addingTimeInterval(10), scope: nil)   // needs a refresh
+        manager = makeManager(oauth: OAuthClient(session: FailingURLProtocol.session()))
+        manager.unreachableRetryInterval = 60
         await manager.checkAuthStatus()
         XCTAssertEqual(manager.state, .unreachable)
         XCTAssertTrue(manager.isRetryScheduled)
-        let signedIn = expectation(description: "signed in after the retry")
-        spy.onChange = { state in if case .signedIn = state { signedIn.fulfill() } }
-        await fulfillment(of: [signedIn], timeout: 3)
-        XCTAssertFalse(manager.isRetryScheduled)
-        XCTAssertEqual(api.paths.count, 2)
-    }
-
-    func test_unreachable_retryThatFailsAgain_reschedules() async {
-        manager.unreachableRetryInterval = 0.05
-        api.responses = [.failure(.transport("offline")), .failure(.transport("still offline"))]
-        await manager.checkAuthStatus()
-        let secondAttempt = expectation(description: "second attempt made")
-        secondAttempt.assertForOverFulfill = false
-        let check = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { [api] _ in
-            if (api?.paths.count ?? 0) >= 2 { secondAttempt.fulfill() }
-        }
-        await fulfillment(of: [secondAttempt], timeout: 3)
-        check.invalidate()
-        XCTAssertEqual(manager.state, .unreachable)
-        XCTAssertTrue(manager.isRetryScheduled)
-    }
-
-    func test_verify_transientFailureWhileSignedIn_keepsSignedIn() async {
-        api.responses = [.success(Fixtures.response(200, Fixtures.twoOrgsJSON)), .failure(.transport("blip"))]
-        _ = await manager.verifySession()
-        let state = await manager.verifySession()
-        guard case .signedIn = state else { return XCTFail("\(state)") }
-    }
-
-    // MARK: - LoginWindowController URL heuristic (now only a trigger for an API check)
-
-    func test_isCandidateLoginURL() {
-        let vc = LoginWindowController(authManager: nil, dataStore: .nonPersistent())
-        XCTAssertTrue(vc.isCandidateLoginURL(URL(string: "https://claude.ai/")!))
-        XCTAssertTrue(vc.isCandidateLoginURL(URL(string: "https://claude.ai/chats")!))
-        XCTAssertTrue(vc.isCandidateLoginURL(URL(string: "https://claude.ai/settings/usage")!))
-        XCTAssertFalse(vc.isCandidateLoginURL(URL(string: "https://claude.ai/login")!))
-        XCTAssertFalse(vc.isCandidateLoginURL(URL(string: "https://claude.ai/auth/callback")!))
-        XCTAssertFalse(vc.isCandidateLoginURL(URL(string: "https://google.com/")!))
     }
 }

@@ -4,12 +4,10 @@ import XCTest
 @MainActor
 final class MenuViewTests: XCTestCase {
 
-    private let org = Organization(uuid: "chat-org", name: "Personal", capabilities: ["chat"])
-
     private func signedInController() -> MenuViewController {
         let vc = MenuViewController()
         _ = vc.view
-        vc.render(state: .signedIn(org, chatOrgCount: 1))
+        vc.render(state: .signedIn(.webSession, nil))
         return vc
     }
 
@@ -54,11 +52,11 @@ final class MenuViewTests: XCTestCase {
     func test_render_signedOut_hidesUsage_signedIn_showsIt() {
         let vc = MenuViewController()
         _ = vc.view
-        vc.render(state: .signedOut)
+        vc.render(state: .signedOut(claudeCodeAvailable: false))
         XCTAssertFalse(vc.isShowingUsage)
-        vc.render(state: .sessionExpired)
+        vc.render(state: .sessionExpired(.webSession))
         XCTAssertFalse(vc.isShowingUsage)
-        vc.render(state: .signedIn(org, chatOrgCount: 1))
+        vc.render(state: .signedIn(.webSession, nil))
         XCTAssertTrue(vc.isShowingUsage)
     }
 }

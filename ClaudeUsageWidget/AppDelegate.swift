@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -20,7 +21,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()                 // before any WebKit object exists (Sonoma NSStatusBar issue)
         setupPopover()
         client = ClaudeAPIClient()
-        authManager = AuthManager(client: client)
+        authManager = AuthManager(dependencies: .init(
+            oauth: OAuthClient(),
+            tokenStore: KeychainTokenStore(),
+            claudeCode: KeychainClaudeCodeCredentials(),
+            webSession: WebSessionAuth(client: client),
+            defaults: .standard,
+            makeCallbackServer: { CallbackServer() },
+            openURL: { NSWorkspace.shared.open($0) },
+            hasWebSessionCookies: {
+                let records = await WKWebsiteDataStore.default().dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
+                return records.contains { $0.displayName.contains("claude.ai") }
+            }
+        ))
         authManager.delegate = self
         Task { await authManager.checkAuthStatus() }
     }
@@ -40,14 +53,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menuViewController = MenuViewController()
         menuViewController.onRefresh = { [weak self] in
             guard let self else { return }
-            if case .signedIn = self.authManager.state {
-                self.usageService?.fetch()
-            } else {
-                Task { await self.authManager.checkAuthStatus() }
+            switch self.authManager.state {
+            case .signedIn: self.usageService?.fetch()
+            case .signingIn: break
+            default: Task { await self.authManager.checkAuthStatus() }
             }
         }
         menuViewController.onSignOut = { [weak self] in self?.signOut() }
-        menuViewController.onSignIn = { [weak self] in self?.authManager.showLoginWindow() }
+        menuViewController.onSignIn = { [weak self] in Task { await self?.authManager.signInWithBrowser() } }
         menuViewController.onToggleMode = { [weak self] mode in
             guard let self = self else { return }
             self.ringMetricMode = mode
@@ -84,10 +97,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Usage Service
 
-    private func startUsageService(for org: Organization) {
-        if let service = usageService, service.identity == .webSession { return }
+    private func startUsageService(source: UsageSource, identity: IdentitySource) {
+        if let service = usageService, service.identity == identity { return }
         stopUsageService()
-        let service = UsageService(source: WebSessionUsageSource(client: client, orgId: org.uuid))
+        let service = UsageService(source: source)
         service.delegate = self
         usageService = service
         menuViewController.showLoading()
@@ -114,8 +127,8 @@ extension AppDelegate: AuthManagerDelegate {
     func authManager(_ manager: AuthManager, didChange state: AuthState) {
         menuViewController.render(state: state)
         switch state {
-        case .signedIn(let org, _):
-            startUsageService(for: org)
+        case .signedIn(let source, _):
+            if let usageSource = manager.usageSource { startUsageService(source: usageSource, identity: source) }
         default:
             stopUsageService()
         }

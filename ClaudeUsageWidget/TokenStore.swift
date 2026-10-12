@@ -53,6 +53,18 @@ enum KeychainItem {
         return item as? Data
     }
 
+    /// Attribute-only lookup: answers without touching the secret, so no consent prompt for another app's item.
+    static func exists(service: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        return SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess
+    }
+
     static func write(_ data: Data, service: String, account: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

@@ -2,7 +2,7 @@ import AppKit
 import WebKit
 
 class LoginWindowController: NSWindowController, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
-    weak var authManager: AuthManager?
+    weak var authManager: WebSessionAuth?
     private let dataStore: WKWebsiteDataStore
     private var webView: WKWebView!
     private var verifying = false
@@ -12,7 +12,7 @@ class LoginWindowController: NSWindowController, WKNavigationDelegate, WKUIDeleg
     // Holds any OAuth popup windows (e.g. Google sign-in)
     private var popupWindowControllers: [NSWindowController] = []
 
-    init(authManager: AuthManager?, dataStore: WKWebsiteDataStore? = nil) {
+    init(authManager: WebSessionAuth?, dataStore: WKWebsiteDataStore? = nil) {
         self.dataStore = dataStore ?? .default()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 640),

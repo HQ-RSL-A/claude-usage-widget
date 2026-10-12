@@ -404,12 +404,13 @@ class MenuViewController: NSViewController {
 
     private func applyAuthState() {
         switch state {
-        case .signedIn(let org, let chatOrgCount):
+        case .signedIn(let source, let profile):
             usageStack.isHidden = false
             emptyStateView.isHidden = true
             refreshButton.isEnabled = true
-            subtitleLabel.isHidden = chatOrgCount < 2
-            subtitleLabel.stringValue = org.displayName
+            let subtitle = profile?.email.map { "Signed in as \($0)" } ?? profile?.organizationName ?? (source == .claudeCode ? "via Claude Code" : "")
+            subtitleLabel.isHidden = subtitle.isEmpty
+            subtitleLabel.stringValue = subtitle
             styleAuthButton(title: "Sign Out", prominent: false)
         case .unknown:
             showEmpty(title: "Checking sign-in...", subtitle: "One moment", authTitle: "Sign In", refreshEnabled: false)
@@ -417,6 +418,8 @@ class MenuViewController: NSViewController {
             showEmpty(title: "Could not reach claude.ai", subtitle: "Check your connection and refresh", authTitle: "Sign In", refreshEnabled: true)
         case .signedOut:
             showEmpty(title: "Not signed in", subtitle: "Sign in to see your usage", authTitle: "Sign In", refreshEnabled: false)
+        case .signingIn:
+            showEmpty(title: "Waiting for your browser...", subtitle: "Approve the sign-in in the tab that opened", authTitle: "Sign In", refreshEnabled: false)
         case .sessionExpired:
             showEmpty(title: "Session expired", subtitle: "Sign in again to keep tracking usage", authTitle: "Sign In", refreshEnabled: false)
         case .noChatOrg:
