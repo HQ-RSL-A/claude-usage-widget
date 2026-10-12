@@ -2,6 +2,10 @@
 
 Newest entry on top.
 
+## 2026-10-12 16:31 PT
+
+v0.4.0, sign in through the browser (branch `v0.4.0-browser-sign-in`, not yet merged). Usage now comes from Anthropic's OAuth usage endpoint with a bearer token. Three identity routes in order: the widget's own token (browser sign-in with PKCE, localhost callback, refreshed before its 8-hour expiry), Claude Code's token read from its Keychain item (one consent prompt, never refreshed by us), and the v0.3.0 web session as fallback and upgrade path. Spike 2026-10-12 proved the flow end to end; Cloudflare only rejects anonymous User-Agents. 137 tests. Spec: `docs/plans/2026-10-12-v0.4.0-browser-sign-in-design.md`. Plan: `docs/plans/2026-10-12-v0.4.0-implementation-plan.md`. Linear: HQ-139. Manual pass (plan Task 9): pending Rahul. Fresh whole-branch review: pending.
+
 ## 2026-10-12 15:23 PT
 
 v0.3.0 review fix pass. A fresh whole-branch review found no Critical and four Important findings, all fixed with tests first: a poll finishing after sign-out could flip the app to "Session expired" (service identity guards, `sessionDidExpire()` ignored unless signed in); the API client never recovered after WebKit killed its content process (`webViewWebContentProcessDidTerminate`, reload after a bridge failure); no automatic retry from "unreachable" (now every 60 s); no tests on the popover rows (six added); tests touched the real cookie store (`.nonPersistent()` injected). 82 tests. Manual pass so far: Google OAuth popup stalls at its final redirect (known HQ-117, popup closed by hand); email code sign-in still to be run. Finding worth a decision: `api.anthropic.com/api/oauth/usage` returns the same buckets with the OAuth token Claude Code stores in Keychain, so a v0.4.0 could sign in through the real browser (autofill, passkeys) or reuse that token with no sign-in at all (Linear decision issue filed).

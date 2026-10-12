@@ -24,7 +24,7 @@ A small ring in your menu bar fills up as you use Claude. It turns amber when yo
    sudo xattr -cr /Applications/ClaudeUsageWidget.app
    ```
    Enter your Mac password when prompted.
-4. Open the app. A login window will appear - sign in to Claude once, and the app stays signed in.
+4. Open the app. If Claude Code is installed, the widget asks once to read its sign-in and the ring fills. Otherwise click **Sign in with your browser**: claude.ai opens in your browser, you approve, and the tab tells you to close it.
 
 > **Why step 3?** macOS blocks apps that aren't signed with an Apple Developer certificate. This is a free, open-source app and isn't code-signed yet, so macOS flags it as "damaged." The command above tells macOS it's safe to run. You only need to do this once.
 
@@ -56,21 +56,27 @@ xcodebuild -scheme ClaudeUsageWidget -configuration Release
 
 ## Privacy
 
-This app only communicates with `claude.ai`. Your session is stored locally using the system's standard WebKit cookie store (same as Safari). Nothing is sent to any third-party server. No analytics. No telemetry.
+This app talks only to Anthropic: `claude.com` and `platform.claude.com` for sign-in, `api.anthropic.com` for usage, and `claude.ai` for the old in-app sign-in. Its own token lives in your macOS Keychain; the in-app session uses the system's WebKit cookie store. Nothing is sent to any third-party server. No analytics. No telemetry.
 
 ---
 
-## Login Notes
+## Signing in
 
-The login window uses an embedded WebView. Email code and email/password login work reliably. Google OAuth works in most cases but can stall on the final redirect step for unsigned apps; if that happens, use email instead.
+Three ways, in the order the widget tries them:
 
-The app considers you signed in only when claude.ai's API says so. If your session expires, the popover reads "Session expired" and the login window opens once. Accounts with several organizations get the one claude.ai last had active, as long as it is a chat organization; API console organizations are never shown. Rows in the popover follow your plan: buckets your plan does not have are not shown.
+1. **Claude Code's sign-in.** If Claude Code is installed, macOS asks once whether the widget may read its sign-in ("Claude Code-credentials"). Always Allow and you are done. The widget only reads the current token; it never changes anything in Claude Code.
+2. **Your browser.** Click "Sign in with your browser". claude.ai opens in your default browser, where Google, passkeys and saved passwords all work. Approve, close the tab, done. The widget keeps its own token in your Keychain and refreshes it itself.
+3. **Inside the app** (the old way). A small link opens the embedded sign-in window. Email code works; Google often does not inside an embedded window.
+
+Sign Out forgets everything the widget holds and stops using Claude Code's sign-in until you choose it again.
+
+The browser route uses Anthropic's OAuth as Claude Code does; Anthropic publishes no third-party registration for it, so if it ever stops working the other two routes remain.
 
 ---
 
 ## Status
 
-v0.3.0 - works for any Claude.ai consumer account. macOS only.
+v0.4.0 - sign in with your browser or reuse Claude Code's sign-in. macOS only.
 
 ---
 

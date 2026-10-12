@@ -7,12 +7,12 @@ Native macOS menu bar app (Swift + AppKit) showing Claude.ai plan usage at a gla
 - **GitHub:** `HQ-RSL-A/claude-usage-widget`
 - **Distribution:** `.dmg` via GitHub Releases (GitHub Actions)
 - **Target:** macOS 13+ (Ventura and later)
-- **Current version:** v0.3.0
+- **Current version:** v0.4.0
 
 ## Stack
 
 - Swift + AppKit (no SwiftUI)
-- WKWebView for auth (persistent data store, no Keychain)
+- Anthropic OAuth token for auth (own token in the Keychain, or Claude Code's token read from its Keychain item); WKWebView login kept as a fallback
 - Core Graphics for ring drawing
 - xcodegen for project management (`project.yml` -> `.xcodeproj`)
 
@@ -26,6 +26,9 @@ Native macOS menu bar app (Swift + AppKit) showing Claude.ai plan usage at a gla
 - **Signed in means a 2xx from `/api/organizations`**, never cookie presence. `ClaudeAPIError.classify` is the only place HTTP status is interpreted
 - **Signed-out signal is HTTP 403 with `error_code: account_session_invalid`** (or 401). A bare 403 is a per-org permission problem (the API console org), never a sign-out
 - **Only `chat`-capable orgs may be selected** (`Organization.pickChatOrg`); console orgs always 403 on usage
+- **Every OAuth request carries** `anthropic-beta: oauth-2025-04-20` and `User-Agent: ClaudeUsageWidget/<version> (macOS)`; Cloudflare in front of `platform.claude.com` rejects anonymous-looking clients
+- **Never use Claude Code's refresh token.** Read its access token, nothing else; refreshing it would break Claude Code
+- **Tokens live in the Keychain or memory**, never UserDefaults, logs or files. Tests touch only `io.rsla.ClaudeUsageWidget.tests*` Keychain services
 
 ## Commands
 
