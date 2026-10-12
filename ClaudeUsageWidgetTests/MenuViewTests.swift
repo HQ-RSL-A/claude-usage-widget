@@ -59,4 +59,55 @@ final class MenuViewTests: XCTestCase {
         vc.render(state: .signedIn(.webSession, nil))
         XCTAssertTrue(vc.isShowingUsage)
     }
+
+    func test_signedOut_withClaudeCode_showsAllThreeButtons() {
+        let vc = MenuViewController(); _ = vc.view
+        vc.render(state: .signedOut(claudeCodeAvailable: true))
+        XCTAssertEqual(vc.visibleSignInButtons, ["Sign in with your browser", "Use Claude Code's sign-in", "Sign in inside the app"])
+        XCTAssertNil(vc.footerAuthTitle)
+        XCTAssertFalse(vc.isShowingUsage)
+    }
+
+    func test_signedOut_withoutClaudeCode_hidesClaudeCodeButton() {
+        let vc = MenuViewController(); _ = vc.view
+        vc.render(state: .signedOut(claudeCodeAvailable: false))
+        XCTAssertEqual(vc.visibleSignInButtons, ["Sign in with your browser", "Sign in inside the app"])
+    }
+
+    func test_signingIn_showsWaitingAndCancel() {
+        let vc = MenuViewController(); _ = vc.view
+        vc.render(state: .signingIn)
+        XCTAssertEqual(vc.visibleSignInButtons, ["Cancel"])
+        XCTAssertTrue(vc.emptyTitle.contains("Waiting for your browser"))
+    }
+
+    func test_signedIn_showsEmailSubtitle_andSignOut() {
+        let vc = MenuViewController(); _ = vc.view
+        vc.render(state: .signedIn(.ownToken, Profile(email: "test@example.com", displayName: "Test", organizationName: nil, organizationType: nil)))
+        XCTAssertEqual(vc.subtitleText, "Signed in as test@example.com")
+        XCTAssertEqual(vc.footerAuthTitle, "Sign Out")
+        XCTAssertTrue(vc.isShowingUsage)
+    }
+
+    func test_signedIn_viaClaudeCode_withoutProfile_saysSo() {
+        let vc = MenuViewController(); _ = vc.view
+        vc.render(state: .signedIn(.claudeCode, nil))
+        XCTAssertEqual(vc.subtitleText, "via Claude Code")
+    }
+
+    func test_sessionExpired_showsButtonForItsSource() {
+        let vc = MenuViewController(); _ = vc.view
+        vc.render(state: .sessionExpired(.ownToken))
+        XCTAssertEqual(vc.visibleSignInButtons, ["Sign in with your browser"])
+        XCTAssertEqual(vc.footerAuthTitle, "Sign Out")
+        vc.render(state: .sessionExpired(.claudeCode))
+        XCTAssertEqual(vc.visibleSignInButtons, ["Use Claude Code's sign-in", "Sign in with your browser"])
+    }
+
+    func test_signInMessage_isShownInEmptyState() {
+        let vc = MenuViewController(); _ = vc.view
+        vc.signInMessage = "Sign-in timed out, try again"
+        vc.render(state: .signedOut(claudeCodeAvailable: false))
+        XCTAssertEqual(vc.emptySubtitle, "Sign-in timed out, try again")
+    }
 }

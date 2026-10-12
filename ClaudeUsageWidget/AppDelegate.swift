@@ -60,7 +60,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         menuViewController.onSignOut = { [weak self] in self?.signOut() }
-        menuViewController.onSignIn = { [weak self] in Task { await self?.authManager.signInWithBrowser() } }
+        menuViewController.onSignInBrowser = { [weak self] in Task { await self?.authManager.signInWithBrowser() } }
+        menuViewController.onUseClaudeCode = { [weak self] in Task { await self?.authManager.useClaudeCodeToken() } }
+        menuViewController.onSignInInsideApp = { [weak self] in self?.authManager.signInInsideApp() }
+        menuViewController.onCancelSignIn = { [weak self] in self?.authManager.cancelBrowserSignIn() }
         menuViewController.onToggleMode = { [weak self] mode in
             guard let self = self else { return }
             self.ringMetricMode = mode
@@ -125,6 +128,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: AuthManagerDelegate {
     func authManager(_ manager: AuthManager, didChange state: AuthState) {
+        menuViewController.signInMessage = manager.signInMessage
         menuViewController.render(state: state)
         switch state {
         case .signedIn(let source, _):

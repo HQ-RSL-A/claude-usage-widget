@@ -129,8 +129,20 @@ class MenuViewController: NSViewController {
     // Callbacks set by AppDelegate
     var onRefresh: (() -> Void)?
     var onSignOut: (() -> Void)?
-    var onSignIn: (() -> Void)?
+    var onSignInBrowser: (() -> Void)?
+    var onUseClaudeCode: (() -> Void)?
+    var onSignInInsideApp: (() -> Void)?
+    var onCancelSignIn: (() -> Void)?
     var onToggleMode: ((RingMetricMode) -> Void)?
+
+    /// Shown under the empty-state title until the next sign-in attempt.
+    var signInMessage: String?
+
+    private let browserButton = NSButton(title: "Sign in with your browser", target: nil, action: nil)
+    private let claudeCodeButton = NSButton(title: "Use Claude Code's sign-in", target: nil, action: nil)
+    private let insideAppButton = NSButton(title: "Sign in inside the app", target: nil, action: nil)
+    private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
+    private var buttonStack: NSStackView!
 
     // MARK: - State
 
@@ -331,10 +343,33 @@ class MenuViewController: NSViewController {
         emptySubtitleLabel.alignment = .center
         emptySubtitleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let stack = NSStackView(views: [ringSymbol, emptyTitleLabel, emptySubtitleLabel])
+        // Sign-in routes; which ones show depends on the state
+        for (button, action) in [(browserButton, #selector(browserTapped)), (claudeCodeButton, #selector(claudeCodeTapped)), (cancelButton, #selector(cancelTapped))] {
+            button.bezelStyle = .rounded
+            button.controlSize = .regular
+            button.target = self
+            button.action = action
+            button.translatesAutoresizingMaskIntoConstraints = false
+        }
+        browserButton.keyEquivalent = "\r"
+        insideAppButton.isBordered = false
+        insideAppButton.font = .systemFont(ofSize: 10, weight: .regular)
+        insideAppButton.contentTintColor = .secondaryLabelColor
+        insideAppButton.target = self
+        insideAppButton.action = #selector(insideAppTapped)
+        insideAppButton.translatesAutoresizingMaskIntoConstraints = false
+
+        buttonStack = NSStackView(views: [])
+        buttonStack.orientation = .vertical
+        buttonStack.alignment = .centerX
+        buttonStack.spacing = 6
+        buttonStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView(views: [ringSymbol, emptyTitleLabel, emptySubtitleLabel, buttonStack])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 4
+        stack.setCustomSpacing(12, after: emptySubtitleLabel)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         container.addSubview(stack)
@@ -352,6 +387,11 @@ class MenuViewController: NSViewController {
     var rowCount: Int { rowsStack.arrangedSubviews.count }
     var usageRowCount: Int { rowsStack.arrangedSubviews.filter { $0 is UsageRowView }.count }
     var isShowingUsage: Bool { !usageStack.isHidden }
+    var visibleSignInButtons: [String] { buttonStack.arrangedSubviews.compactMap { ($0 as? NSButton)?.title } }
+    var subtitleText: String { subtitleLabel.isHidden ? "" : subtitleLabel.stringValue }
+    var footerAuthTitle: String? { authButton.isHidden ? nil : authButton.title }
+    var emptyTitle: String { emptyTitleLabel.stringValue }
+    var emptySubtitle: String { emptySubtitleLabel.stringValue }
 
     // MARK: - Public Update Methods
 
@@ -408,40 +448,71 @@ class MenuViewController: NSViewController {
             usageStack.isHidden = false
             emptyStateView.isHidden = true
             refreshButton.isEnabled = true
-            let subtitle = profile?.email.map { "Signed in as \($0)" } ?? profile?.organizationName ?? (source == .claudeCode ? "via Claude Code" : "")
-            subtitleLabel.isHidden = subtitle.isEmpty
-            subtitleLabel.stringValue = subtitle
-            styleAuthButton(title: "Sign Out", prominent: false)
+            setSubtitle(Self.subtitle(for: source, profile: profile))
+            setFooter(authTitle: "Sign Out")
         case .unknown:
-            showEmpty(title: "Checking sign-in...", subtitle: "One moment", authTitle: "Sign In", refreshEnabled: false)
+            showEmpty(title: "Checking sign-in...", subtitle: "One moment", buttons: [], refreshEnabled: false, authTitle: nil)
         case .unreachable:
-            showEmpty(title: "Could not reach claude.ai", subtitle: "Check your connection and refresh", authTitle: "Sign In", refreshEnabled: true)
-        case .signedOut:
-            showEmpty(title: "Not signed in", subtitle: "Sign in to see your usage", authTitle: "Sign In", refreshEnabled: false)
+            showEmpty(title: "Could not reach claude.ai", subtitle: "Check your connection and refresh", buttons: [], refreshEnabled: true, authTitle: nil)
+        case .signedOut(let claudeCodeAvailable):
+            var buttons = [browserButton]
+            if claudeCodeAvailable { buttons.append(claudeCodeButton) }
+            buttons.append(insideAppButton)
+            showEmpty(title: "Not signed in", subtitle: signInMessage ?? "Your browser does the signing in", buttons: buttons, refreshEnabled: false, authTitle: nil)
         case .signingIn:
-            showEmpty(title: "Waiting for your browser...", subtitle: "Approve the sign-in in the tab that opened", authTitle: "Sign In", refreshEnabled: false)
-        case .sessionExpired:
-            showEmpty(title: "Session expired", subtitle: "Sign in again to keep tracking usage", authTitle: "Sign In", refreshEnabled: false)
+            showEmpty(title: "Waiting for your browser...", subtitle: "Approve the sign-in in the tab that opened", buttons: [cancelButton], refreshEnabled: false, authTitle: nil)
+        case .sessionExpired(let source):
+            let buttons: [NSButton]
+            switch source {
+            case .ownToken: buttons = [browserButton]
+            case .claudeCode: buttons = [claudeCodeButton, browserButton]
+            case .webSession: buttons = [insideAppButton, browserButton]
+            }
+            showEmpty(title: "Session expired", subtitle: "Sign in again to keep tracking usage", buttons: buttons, refreshEnabled: false, authTitle: "Sign Out")
         case .noChatOrg:
-            showEmpty(title: "No Claude plan on this account", subtitle: "This account only has API access", authTitle: "Sign Out", refreshEnabled: false)
+            showEmpty(title: "No Claude plan on this account", subtitle: "This account only has API access", buttons: [browserButton], refreshEnabled: false, authTitle: "Sign Out")
         }
         resizeToFit()
     }
 
-    private func showEmpty(title: String, subtitle: String, authTitle: String, refreshEnabled: Bool) {
+    static func subtitle(for source: IdentitySource, profile: Profile?) -> String {
+        if let email = profile?.email { return "Signed in as \(email)" }
+        if let org = profile?.organizationName { return org }
+        switch source {
+        case .claudeCode: return "via Claude Code"
+        case .ownToken: return "Signed in with your browser"
+        case .webSession: return ""
+        }
+    }
+
+    private func showEmpty(title: String, subtitle: String, buttons: [NSButton], refreshEnabled: Bool, authTitle: String?) {
         usageStack.isHidden = true
         emptyStateView.isHidden = false
-        subtitleLabel.isHidden = true
+        setSubtitle("")
         refreshButton.isEnabled = refreshEnabled
         emptyTitleLabel.stringValue = title
         emptySubtitleLabel.stringValue = subtitle
-        styleAuthButton(title: authTitle, prominent: authTitle == "Sign In")
+        buttonStack.arrangedSubviews.forEach {
+            buttonStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        for button in [browserButton, claudeCodeButton, insideAppButton, cancelButton] {
+            button.isHidden = !buttons.contains(button)
+        }
+        buttons.forEach { buttonStack.addArrangedSubview($0) }
+        setFooter(authTitle: authTitle)
     }
 
-    private func styleAuthButton(title: String, prominent: Bool) {
-        authButton.title = title
-        authButton.contentTintColor = prominent ? .labelColor : .secondaryLabelColor
-        authButton.font = .systemFont(ofSize: 11, weight: prominent ? .medium : .regular)
+    private func setSubtitle(_ text: String) {
+        subtitleLabel.stringValue = text
+        subtitleLabel.isHidden = text.isEmpty
+    }
+
+    private func setFooter(authTitle: String?) {
+        authButton.isHidden = authTitle == nil
+        authButton.title = authTitle ?? ""
+        authButton.contentTintColor = .secondaryLabelColor
+        authButton.font = .systemFont(ofSize: 11, weight: .regular)
     }
 
     func showLoading() {
@@ -461,11 +532,13 @@ class MenuViewController: NSViewController {
     }
 
     @objc private func authTapped() {
-        switch state {
-        case .signedIn, .noChatOrg: onSignOut?()
-        default: onSignIn?()
-        }
+        onSignOut?()
     }
+
+    @objc private func browserTapped() { onSignInBrowser?() }
+    @objc private func claudeCodeTapped() { onUseClaudeCode?() }
+    @objc private func insideAppTapped() { onSignInInsideApp?() }
+    @objc private func cancelTapped() { onCancelSignIn?() }
 
     @objc private func quitTapped() {
         NSApp.terminate(nil)
