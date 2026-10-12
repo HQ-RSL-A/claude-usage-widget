@@ -21,8 +21,17 @@ final class AuthManager {
     weak var delegate: AuthManagerDelegate?
 
     private(set) var state: AuthState = .unknown {
-        didSet { if oldValue != state { delegate?.authManager(self, didChange: state) } }
+        didSet {
+            guard oldValue != state else { return }
+            delegate?.authManager(self, didChange: state)
+            if state == .unreachable { scheduleRetry() } else { cancelRetry() }
+        }
     }
+
+    /// While unreachable, claude.ai is asked again on this interval (tests shorten it).
+    var unreachableRetryInterval: TimeInterval = 60
+    private var retryTimer: Timer?
+    var isRetryScheduled: Bool { retryTimer != nil }
 
     /// Tests set this to false; showLoginWindow() then only counts.
     var presentsLoginWindow = true
@@ -93,6 +102,10 @@ final class AuthManager {
 
     /// Called by UsageService when a poll comes back session-invalid. Opens the login window once per expiry.
     func sessionDidExpire() {
+        switch state {
+        case .signedIn, .noChatOrg: break
+        default: return   // a stale poll finishing after sign-out or expiry has nothing to add
+        }
         state = .sessionExpired
         guard !expiryWindowShown else { return }
         expiryWindowShown = true
@@ -113,13 +126,32 @@ final class AuthManager {
         }
     }
 
+    // MARK: - Unreachable retry
+
+    private func scheduleRetry() {
+        retryTimer?.invalidate()
+        retryTimer = Timer.scheduledTimer(withTimeInterval: unreachableRetryInterval, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.retryTimer = nil
+                await self.checkAuthStatus()
+                if self.state == .unreachable { self.scheduleRetry() }   // no transition, so didSet did not run
+            }
+        }
+    }
+
+    private func cancelRetry() {
+        retryTimer?.invalidate()
+        retryTimer = nil
+    }
+
     // MARK: - Login window
 
     func showLoginWindow() {
         loginWindowRequests += 1
         guard presentsLoginWindow else { return }
         if loginWindow == nil {
-            loginWindow = LoginWindowController(authManager: self)
+            loginWindow = LoginWindowController(authManager: self, dataStore: dataStore)
         }
         loginWindow?.showWindow(nil)
         loginWindow?.window?.makeKeyAndOrderFront(nil)

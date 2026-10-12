@@ -349,6 +349,12 @@ class MenuViewController: NSViewController {
         return container
     }
 
+    // MARK: - Read-only state (for tests and diagnostics)
+
+    var rowCount: Int { rowsStack.arrangedSubviews.count }
+    var usageRowCount: Int { rowsStack.arrangedSubviews.filter { $0 is UsageRowView }.count }
+    var isShowingUsage: Bool { !usageStack.isHidden }
+
     // MARK: - Public Update Methods
 
     func update(with data: UsageData) {

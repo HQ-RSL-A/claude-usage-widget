@@ -36,6 +36,7 @@ final class ClaudeAPIClient: NSObject, ClaudeAPI {
         do {
             result = try await webView.callAsyncJavaScript(js, arguments: ["path": path], in: nil, contentWorld: .defaultClient)
         } catch {
+            isReady = false   // the page may be dead; reload it before the next call
             throw ClaudeAPIError.transport(error.localizedDescription)
         }
         return try Self.parseBridgeResult(result)
@@ -110,5 +111,10 @@ extension ClaudeAPIClient: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         finishLoading(.failure(ClaudeAPIError.transport(error.localizedDescription)))
+    }
+
+    /// WebKit kills idle content processes after sleep or under memory pressure; the next call must reload.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        isReady = false
     }
 }

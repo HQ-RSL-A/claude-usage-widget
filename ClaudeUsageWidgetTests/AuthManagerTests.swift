@@ -6,7 +6,11 @@ final class AuthManagerTests: XCTestCase {
 
     private final class SpyDelegate: AuthManagerDelegate {
         var states: [AuthState] = []
-        func authManager(_ manager: AuthManager, didChange state: AuthState) { states.append(state) }
+        var onChange: ((AuthState) -> Void)?
+        func authManager(_ manager: AuthManager, didChange state: AuthState) {
+            states.append(state)
+            onChange?(state)
+        }
     }
 
     private var api: FakeClaudeAPI!
@@ -16,7 +20,7 @@ final class AuthManagerTests: XCTestCase {
     override func setUp() {
         super.setUp()
         api = FakeClaudeAPI()
-        manager = AuthManager(client: api)
+        manager = AuthManager(client: api, dataStore: .nonPersistent())
         manager.presentsLoginWindow = false
         spy = SpyDelegate()
         manager.delegate = spy
@@ -114,6 +118,44 @@ final class AuthManagerTests: XCTestCase {
         guard case .signedIn = manager.state else { return XCTFail("\(manager.state)") }
     }
 
+    func test_sessionDidExpire_whenNotSignedIn_isIgnored() async {
+        api.responses = [.success(Fixtures.sessionInvalid403)]
+        await manager.checkAuthStatus()
+        XCTAssertEqual(manager.state, .signedOut)
+        XCTAssertEqual(manager.loginWindowRequests, 1)
+        manager.sessionDidExpire()   // a stale poll finishing after sign-out
+        XCTAssertEqual(manager.state, .signedOut)
+        XCTAssertEqual(manager.loginWindowRequests, 1)
+    }
+
+    func test_unreachable_schedulesRetry_andRecoversWhenClaudeAnswers() async {
+        manager.unreachableRetryInterval = 0.05
+        api.responses = [.failure(.transport("offline")), .success(Fixtures.response(200, Fixtures.twoOrgsJSON))]
+        await manager.checkAuthStatus()
+        XCTAssertEqual(manager.state, .unreachable)
+        XCTAssertTrue(manager.isRetryScheduled)
+        let signedIn = expectation(description: "signed in after the retry")
+        spy.onChange = { state in if case .signedIn = state { signedIn.fulfill() } }
+        await fulfillment(of: [signedIn], timeout: 3)
+        XCTAssertFalse(manager.isRetryScheduled)
+        XCTAssertEqual(api.paths.count, 2)
+    }
+
+    func test_unreachable_retryThatFailsAgain_reschedules() async {
+        manager.unreachableRetryInterval = 0.05
+        api.responses = [.failure(.transport("offline")), .failure(.transport("still offline"))]
+        await manager.checkAuthStatus()
+        let secondAttempt = expectation(description: "second attempt made")
+        secondAttempt.assertForOverFulfill = false
+        let check = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { [api] _ in
+            if (api?.paths.count ?? 0) >= 2 { secondAttempt.fulfill() }
+        }
+        await fulfillment(of: [secondAttempt], timeout: 3)
+        check.invalidate()
+        XCTAssertEqual(manager.state, .unreachable)
+        XCTAssertTrue(manager.isRetryScheduled)
+    }
+
     func test_verify_transientFailureWhileSignedIn_keepsSignedIn() async {
         api.responses = [.success(Fixtures.response(200, Fixtures.twoOrgsJSON)), .failure(.transport("blip"))]
         _ = await manager.verifySession()
@@ -124,7 +166,7 @@ final class AuthManagerTests: XCTestCase {
     // MARK: - LoginWindowController URL heuristic (now only a trigger for an API check)
 
     func test_isCandidateLoginURL() {
-        let vc = LoginWindowController(authManager: nil)
+        let vc = LoginWindowController(authManager: nil, dataStore: .nonPersistent())
         XCTAssertTrue(vc.isCandidateLoginURL(URL(string: "https://claude.ai/")!))
         XCTAssertTrue(vc.isCandidateLoginURL(URL(string: "https://claude.ai/chats")!))
         XCTAssertTrue(vc.isCandidateLoginURL(URL(string: "https://claude.ai/settings/usage")!))

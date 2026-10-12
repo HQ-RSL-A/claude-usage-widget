@@ -3,6 +3,7 @@ import WebKit
 
 class LoginWindowController: NSWindowController, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     weak var authManager: AuthManager?
+    private let dataStore: WKWebsiteDataStore
     private var webView: WKWebView!
     private var verifying = false
     private var finished = false
@@ -11,7 +12,8 @@ class LoginWindowController: NSWindowController, WKNavigationDelegate, WKUIDeleg
     // Holds any OAuth popup windows (e.g. Google sign-in)
     private var popupWindowControllers: [NSWindowController] = []
 
-    init(authManager: AuthManager?) {
+    init(authManager: AuthManager?, dataStore: WKWebsiteDataStore? = nil) {
+        self.dataStore = dataStore ?? .default()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 640),
             styleMask: [.titled, .closable, .resizable],
@@ -34,7 +36,7 @@ class LoginWindowController: NSWindowController, WKNavigationDelegate, WKUIDeleg
 
     private func setupWebView() {
         let config = WKWebViewConfiguration()
-        config.websiteDataStore = WKWebsiteDataStore.default()
+        config.websiteDataStore = dataStore
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
@@ -130,7 +132,7 @@ class LoginWindowController: NSWindowController, WKNavigationDelegate, WKUIDeleg
         popupWindow.title = "Sign in"
         popupWindow.center()
 
-        configuration.websiteDataStore = WKWebsiteDataStore.default()
+        configuration.websiteDataStore = dataStore
         let popupWebView = WKWebView(frame: popupWindow.contentView!.bounds, configuration: configuration)
         popupWebView.autoresizingMask = [.width, .height]
         popupWebView.navigationDelegate = self

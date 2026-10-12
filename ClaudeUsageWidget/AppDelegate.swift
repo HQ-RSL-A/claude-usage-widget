@@ -126,17 +126,20 @@ extension AppDelegate: AuthManagerDelegate {
 
 extension AppDelegate: UsageServiceDelegate {
     func usageService(_ service: UsageService, didUpdate data: UsageData) {
+        guard service === usageService else { return }   // a poll that finished after sign-out or expiry
         updateStatusIcon(progress: data.ringValue(for: ringMetricMode), colorState: data.ringColorState(for: ringMetricMode))
         menuViewController.update(with: data)
     }
 
     func usageService(_ service: UsageService, didFailWith error: ClaudeAPIError) {
+        guard service === usageService else { return }
         var message = error.userMessage
         if case .decode = error { message += " (v\(MenuViewController.appVersion))" }   // bug reports need the version
         menuViewController.showError(message)
     }
 
     func usageServiceDidDetectSessionExpiry(_ service: UsageService) {
+        guard service === usageService else { return }
         authManager.sessionDidExpire()
     }
 }

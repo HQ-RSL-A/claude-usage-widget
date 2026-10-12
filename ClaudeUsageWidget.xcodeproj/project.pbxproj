@@ -29,6 +29,7 @@
 		C4F1A96ED753DE0DBA74B449 /* RingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B24B7DD535C785804768B340 /* RingView.swift */; };
 		D8BDD746710D4A7503A41BFD /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F79B0C04B600DE4E034CFBB6 /* MenuView.swift */; };
 		D8CD1941E8CDC07A982F5EB2 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D705336A2AB929001115064 /* AppDelegate.swift */; };
+		E01C68C138CE9F56490C721C /* MenuViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E4194E213B61DCD558C0D4E /* MenuViewTests.swift */; };
 		EB0528451C2EA5B139D6452C /* Organization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A36DC05FB3F76B3B1FA4E1F /* Organization.swift */; };
 /* End PBXBuildFile section */
 
@@ -46,6 +47,7 @@
 		0048CC636DB0DBF8DB7BEC09 /* LoginWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginWindowController.swift; sourceTree = "<group>"; };
 		061F8320D3E73E35C08824E7 /* RingViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RingViewTests.swift; sourceTree = "<group>"; };
 		14A3BF365287F046F88122B4 /* ClaudeAPIErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeAPIErrorTests.swift; sourceTree = "<group>"; };
+		1E4194E213B61DCD558C0D4E /* MenuViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuViewTests.swift; sourceTree = "<group>"; };
 		25194CA143CE94229B4E506A /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		31CA26DF864E570115CB6D44 /* RefreshIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshIcon.swift; sourceTree = "<group>"; };
 		3B363DAB17FDD4CB08560C2C /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -82,6 +84,7 @@
 				CC56F2E1EAAC21FF2273626F /* ClaudeUsageWidgetTests.swift */,
 				666BACBDFDE9072097D2DEC7 /* FakeClaudeAPI.swift */,
 				F65BA1566A01BFB2756EE7E0 /* Fixtures.swift */,
+				1E4194E213B61DCD558C0D4E /* MenuViewTests.swift */,
 				E0BE9B7536A7ADD8E35AC0EB /* ModelsTests.swift */,
 				D235C1C1C78A66606C60F126 /* OrganizationTests.swift */,
 				061F8320D3E73E35C08824E7 /* RingViewTests.swift */,
@@ -249,6 +252,7 @@
 				4668A43182BF1F7C35B760F0 /* ClaudeUsageWidgetTests.swift in Sources */,
 				6C71BB7933B21E7E2A8ACD4B /* FakeClaudeAPI.swift in Sources */,
 				5698FE2A32F06BAF92851D8C /* Fixtures.swift in Sources */,
+				E01C68C138CE9F56490C721C /* MenuViewTests.swift in Sources */,
 				AFAA0BAD2197F3BD672F99E3 /* ModelsTests.swift in Sources */,
 				7ECA99E64D58376AF8175958 /* OrganizationTests.swift in Sources */,
 				8EA1F829DC6AA8978562C8D5 /* RingViewTests.swift in Sources */,
