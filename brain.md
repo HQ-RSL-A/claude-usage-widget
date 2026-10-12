@@ -87,7 +87,7 @@ Ring shows session usage by default, configurable via popover toggle. Weekly mod
 
 ## Testing
 
-- `xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO` (71 tests as of v0.3.0); CI runs the same on every push to `main`
+- `xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO` (82 tests as of v0.3.0); CI runs the same on every push to `main`
 - `FakeClaudeAPI` scripts responses per call; `Fixtures` holds the real response shapes (Max 20x usage, two-org list, every error envelope)
 - Manual pass before a release: fresh sign-in via email code, sign out and back in, forced expiry, offline launch (plan Task 8)
 
