@@ -84,7 +84,7 @@ Ring shows session usage by default, configurable via popover toggle. Weekly mod
 
 ## Testing
 
-- `xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO` (137 tests as of v0.4.0); CI runs the same on every push to `main`
+- `xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO` (145 tests as of v0.4.0); CI runs the same on every push to `main`
 - `StubURLProtocol` answers OAuth requests; `FakeClaudeAPI` scripts web-session responses; `FakeCallbackServer`, `InMemoryTokenStore`, `FakeClaudeCodeCredentials` drive the coordinator; `CallbackServerTests` make real localhost requests; one Keychain round trip runs under `io.rsla.ClaudeUsageWidget.tests`
 - Manual pass before a release: Claude Code route, browser route with Google, cancel, forced refresh, upgrade path (plan Task 9)
 
