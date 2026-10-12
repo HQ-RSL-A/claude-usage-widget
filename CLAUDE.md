@@ -7,7 +7,7 @@ Native macOS menu bar app (Swift + AppKit) showing Claude.ai plan usage at a gla
 - **GitHub:** `HQ-RSL-A/claude-usage-widget`
 - **Distribution:** `.dmg` via GitHub Releases (GitHub Actions)
 - **Target:** macOS 13+ (Ventura and later)
-- **Current version:** v0.2.1
+- **Current version:** v0.3.0
 
 ## Stack
 
@@ -21,8 +21,11 @@ Native macOS menu bar app (Swift + AppKit) showing Claude.ai plan usage at a gla
 - **Never hand-edit `.xcodeproj`** - edit `project.yml`, run `xcodegen generate`
 - **Never use `exportArchive`** for DMG builds - it strips Resources from unsigned apps. Copy `.app` directly from `.xcarchive`
 - **`main.swift` is intentional** - `@main` doesn't wire `NSApp.delegate` without a nib file
-- `setupStatusItem()` must run before `setupWebView()` (WebKit IPC interferes with NSStatusBar on Sonoma)
+- `setupStatusItem()` must run before any WebKit object exists (`ClaudeAPIClient`, login window): WebKit IPC interferes with NSStatusBar on Sonoma
 - Use `callAsyncJavaScript` not `evaluateJavaScript` for fetch() calls (Promise handling)
+- **Signed in means a 2xx from `/api/organizations`**, never cookie presence. `ClaudeAPIError.classify` is the only place HTTP status is interpreted
+- **Signed-out signal is HTTP 403 with `error_code: account_session_invalid`** (or 401). A bare 403 is a per-org permission problem (the API console org), never a sign-out
+- **Only `chat`-capable orgs may be selected** (`Organization.pickChatOrg`); console orgs always 403 on usage
 
 ## Commands
 

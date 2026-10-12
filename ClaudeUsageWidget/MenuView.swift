@@ -109,15 +109,16 @@ class UsageRowView: NSView {
         ])
     }
 
-    func update(stat: UsageStat, isSession: Bool) {
-        progressBar.progress = stat.percentUsed
-        progressBar.colorState = stat.barColorState
-        percentLabel.stringValue = String(format: "%.0f%%", stat.percentUsed * 100)
-        if isSession {
-            resetLabel.stringValue = stat.resetsInDisplay
-        } else {
-            resetLabel.stringValue = stat.resetsAtDisplay ?? "—"
-        }
+    func update(percent: Double, colorState: RingColorState, detail: String) {
+        progressBar.progress = percent
+        progressBar.colorState = colorState
+        percentLabel.stringValue = String(format: "%.0f%%", percent * 100)
+        resetLabel.stringValue = detail
+    }
+
+    func update(bucket: UsageBucket) {
+        let detail = bucket.kind.isWeekly ? (bucket.resetsAtDisplay ?? "—") : bucket.resetsInDisplay
+        update(percent: bucket.percentUsed, colorState: bucket.barColorState, detail: detail)
     }
 }
 
@@ -133,20 +134,26 @@ class MenuViewController: NSViewController {
 
     // MARK: - State
 
-    private var isSignedIn: Bool = true
+    private var state: AuthState = .unknown
 
     // MARK: - UI Elements
 
     private let titleLabel = NSTextField(labelWithString: "Claude Usage")
+    private let subtitleLabel = NSTextField(labelWithString: "")
+    private let emptyTitleLabel = NSTextField(labelWithString: "Not signed in")
+    private let emptySubtitleLabel = NSTextField(labelWithString: "Sign in to see your usage")
     private let refreshButton = RefreshButton(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
     private let segmentedControl = NSSegmentedControl()
-    private let sessionRow = UsageRowView(label: "Current Session")
-    private let weeklyAllRow = UsageRowView(label: "Weekly — All Models")
-    private let weeklySonnetRow = UsageRowView(label: "Weekly — Sonnet")
+    private let rowsStack = NSStackView()
     private let lastUpdatedLabel = NSTextField(labelWithString: "Last updated: —")
     private let authButton = NSButton(title: "Sign Out", target: nil, action: nil)
     private let quitButton = NSButton(title: "Quit", target: nil, action: nil)
     private let separator = NSBox()
+    private let versionLabel = NSTextField(labelWithString: "v" + MenuViewController.appVersion)
+
+    static var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
 
     // Containers for toggling visibility
     private var usageStack: NSStackView!
@@ -174,13 +181,25 @@ class MenuViewController: NSViewController {
         titleLabel.textColor = .labelColor
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        // Subtitle (org name, only when the account has more than one chat org)
+        subtitleLabel.font = .systemFont(ofSize: 10, weight: .regular)
+        subtitleLabel.textColor = .tertiaryLabelColor
+        subtitleLabel.isHidden = true
+        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let titleStack = NSStackView(views: [titleLabel, subtitleLabel])
+        titleStack.orientation = .vertical
+        titleStack.alignment = .leading
+        titleStack.spacing = 1
+        titleStack.translatesAutoresizingMaskIntoConstraints = false
+
         // Refresh button
         refreshButton.onRefresh = { [weak self] in self?.onRefresh?() }
         refreshButton.translatesAutoresizingMaskIntoConstraints = false
         refreshButton.setContentHuggingPriority(.required, for: .horizontal)
 
         // Header row
-        let headerRow = NSStackView(views: [titleLabel, refreshButton])
+        let headerRow = NSStackView(views: [titleStack, refreshButton])
         headerRow.orientation = .horizontal
         headerRow.alignment = .centerY
         headerRow.distribution = .fill
@@ -198,10 +217,11 @@ class MenuViewController: NSViewController {
         segmentedControl.controlSize = .small
         segmentedControl.font = .systemFont(ofSize: 11, weight: .medium)
 
-        // Usage rows
-        [sessionRow, weeklyAllRow, weeklySonnetRow].forEach {
-            $0.translatesAutoresizingMaskIntoConstraints = false
-        }
+        // Usage rows (rebuilt from data on every update)
+        rowsStack.orientation = .vertical
+        rowsStack.alignment = .leading
+        rowsStack.spacing = 10
+        rowsStack.translatesAutoresizingMaskIntoConstraints = false
 
         // Last updated
         lastUpdatedLabel.font = .systemFont(ofSize: 10, weight: .regular)
@@ -211,9 +231,7 @@ class MenuViewController: NSViewController {
         // Usage stack (visible when signed in)
         usageStack = NSStackView(views: [
             segmentedControl,
-            sessionRow,
-            weeklyAllRow,
-            weeklySonnetRow,
+            rowsStack,
             lastUpdatedLabel,
         ])
         usageStack.orientation = .vertical
@@ -248,10 +266,15 @@ class MenuViewController: NSViewController {
         quitButton.action = #selector(quitTapped)
         quitButton.translatesAutoresizingMaskIntoConstraints = false
 
+        // Version label
+        versionLabel.font = .systemFont(ofSize: 10, weight: .regular)
+        versionLabel.textColor = .tertiaryLabelColor
+        versionLabel.translatesAutoresizingMaskIntoConstraints = false
+
         // Footer row
         let spacer = NSView()
         spacer.translatesAutoresizingMaskIntoConstraints = false
-        let footerRow = NSStackView(views: [spacer, authButton, quitButton])
+        let footerRow = NSStackView(views: [versionLabel, spacer, authButton, quitButton])
         footerRow.orientation = .horizontal
         footerRow.alignment = .centerY
         footerRow.spacing = 12
@@ -278,6 +301,7 @@ class MenuViewController: NSViewController {
         usageStack.widthAnchor.constraint(equalTo: mainStack.widthAnchor).isActive = true
         emptyStateView.widthAnchor.constraint(equalTo: mainStack.widthAnchor).isActive = true
         segmentedControl.widthAnchor.constraint(equalTo: usageStack.widthAnchor).isActive = true
+        rowsStack.widthAnchor.constraint(equalTo: usageStack.widthAnchor).isActive = true
 
         view.addSubview(mainStack)
 
@@ -285,7 +309,8 @@ class MenuViewController: NSViewController {
             mainStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
             mainStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
             mainStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
-            mainStack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -12),
+            mainStack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
+            view.widthAnchor.constraint(equalToConstant: 300),
         ])
     }
 
@@ -298,19 +323,17 @@ class MenuViewController: NSViewController {
         ringSymbol.alignment = .center
         ringSymbol.translatesAutoresizingMaskIntoConstraints = false
 
-        let titleLabel = NSTextField(labelWithString: "Not signed in")
-        titleLabel.font = .systemFont(ofSize: 12, weight: .regular)
-        titleLabel.textColor = .secondaryLabelColor
-        titleLabel.alignment = .center
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        emptyTitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
+        emptyTitleLabel.textColor = .secondaryLabelColor
+        emptyTitleLabel.alignment = .center
+        emptyTitleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let subtitleLabel = NSTextField(labelWithString: "Sign in to see your usage")
-        subtitleLabel.font = .systemFont(ofSize: 11, weight: .regular)
-        subtitleLabel.textColor = .tertiaryLabelColor
-        subtitleLabel.alignment = .center
-        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        emptySubtitleLabel.font = .systemFont(ofSize: 11, weight: .regular)
+        emptySubtitleLabel.textColor = .tertiaryLabelColor
+        emptySubtitleLabel.alignment = .center
+        emptySubtitleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let stack = NSStackView(views: [ringSymbol, titleLabel, subtitleLabel])
+        let stack = NSStackView(views: [ringSymbol, emptyTitleLabel, emptySubtitleLabel])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 4
@@ -326,39 +349,98 @@ class MenuViewController: NSViewController {
         return container
     }
 
+    // MARK: - Read-only state (for tests and diagnostics)
+
+    var rowCount: Int { rowsStack.arrangedSubviews.count }
+    var usageRowCount: Int { rowsStack.arrangedSubviews.filter { $0 is UsageRowView }.count }
+    var isShowingUsage: Bool { !usageStack.isHidden }
+
     // MARK: - Public Update Methods
 
     func update(with data: UsageData) {
-        sessionRow.update(stat: data.currentSession, isSession: true)
-        weeklyAllRow.update(stat: data.weeklyAllModels, isSession: false)
-        weeklySonnetRow.update(stat: data.weeklySonnetOnly, isSession: false)
+        rowsStack.arrangedSubviews.forEach {
+            rowsStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        for bucket in data.buckets {
+            let row = UsageRowView(label: bucket.kind.label)
+            row.update(bucket: bucket)
+            addRow(row)
+        }
+        if let extra = data.extraUsage, extra.isEnabled, let percent = extra.percentUsed {
+            let row = UsageRowView(label: "Extra usage")
+            row.update(percent: percent, colorState: .from(percent: percent), detail: "monthly budget")
+            addRow(row)
+        }
+        if rowsStack.arrangedSubviews.isEmpty {
+            let label = NSTextField(labelWithString: "No usage limits reported for this plan")
+            label.font = .systemFont(ofSize: 11, weight: .regular)
+            label.textColor = .secondaryLabelColor
+            rowsStack.addArrangedSubview(label)
+        }
 
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
         lastUpdatedLabel.stringValue = "Updated " + formatter.localizedString(for: data.lastUpdated, relativeTo: Date())
+        resizeToFit()
     }
 
-    func updateAuthState(isSignedIn: Bool) {
-        self.isSignedIn = isSignedIn
-        // View may not be loaded yet (popover is lazy) — applyAuthState runs in viewDidLoad
+    private func addRow(_ row: UsageRowView) {
+        row.translatesAutoresizingMaskIntoConstraints = false
+        rowsStack.addArrangedSubview(row)
+        row.widthAnchor.constraint(equalTo: rowsStack.widthAnchor).isActive = true
+    }
+
+    /// NSPopover tracks preferredContentSize, so two rows and five rows both fit.
+    private func resizeToFit() {
+        view.layoutSubtreeIfNeeded()
+        preferredContentSize = NSSize(width: 300, height: view.fittingSize.height)
+    }
+
+    func render(state: AuthState) {
+        self.state = state
+        // View may not be loaded yet (popover is lazy); applyAuthState runs in viewDidLoad
         guard isViewLoaded else { return }
         applyAuthState()
     }
 
     private func applyAuthState() {
-        usageStack.isHidden = !isSignedIn
-        emptyStateView.isHidden = isSignedIn
-        refreshButton.isEnabled = isSignedIn
-
-        if isSignedIn {
-            authButton.title = "Sign Out"
-            authButton.contentTintColor = .secondaryLabelColor
-            authButton.font = .systemFont(ofSize: 11, weight: .regular)
-        } else {
-            authButton.title = "Sign In"
-            authButton.contentTintColor = .labelColor
-            authButton.font = .systemFont(ofSize: 11, weight: .medium)
+        switch state {
+        case .signedIn(let org, let chatOrgCount):
+            usageStack.isHidden = false
+            emptyStateView.isHidden = true
+            refreshButton.isEnabled = true
+            subtitleLabel.isHidden = chatOrgCount < 2
+            subtitleLabel.stringValue = org.displayName
+            styleAuthButton(title: "Sign Out", prominent: false)
+        case .unknown:
+            showEmpty(title: "Checking sign-in...", subtitle: "One moment", authTitle: "Sign In", refreshEnabled: false)
+        case .unreachable:
+            showEmpty(title: "Could not reach claude.ai", subtitle: "Check your connection and refresh", authTitle: "Sign In", refreshEnabled: true)
+        case .signedOut:
+            showEmpty(title: "Not signed in", subtitle: "Sign in to see your usage", authTitle: "Sign In", refreshEnabled: false)
+        case .sessionExpired:
+            showEmpty(title: "Session expired", subtitle: "Sign in again to keep tracking usage", authTitle: "Sign In", refreshEnabled: false)
+        case .noChatOrg:
+            showEmpty(title: "No Claude plan on this account", subtitle: "This account only has API access", authTitle: "Sign Out", refreshEnabled: false)
         }
+        resizeToFit()
+    }
+
+    private func showEmpty(title: String, subtitle: String, authTitle: String, refreshEnabled: Bool) {
+        usageStack.isHidden = true
+        emptyStateView.isHidden = false
+        subtitleLabel.isHidden = true
+        refreshButton.isEnabled = refreshEnabled
+        emptyTitleLabel.stringValue = title
+        emptySubtitleLabel.stringValue = subtitle
+        styleAuthButton(title: authTitle, prominent: authTitle == "Sign In")
+    }
+
+    private func styleAuthButton(title: String, prominent: Bool) {
+        authButton.title = title
+        authButton.contentTintColor = prominent ? .labelColor : .secondaryLabelColor
+        authButton.font = .systemFont(ofSize: 11, weight: prominent ? .medium : .regular)
     }
 
     func showLoading() {
@@ -378,10 +460,9 @@ class MenuViewController: NSViewController {
     }
 
     @objc private func authTapped() {
-        if isSignedIn {
-            onSignOut?()
-        } else {
-            onSignIn?()
+        switch state {
+        case .signedIn, .noChatOrg: onSignOut?()
+        default: onSignIn?()
         }
     }
 

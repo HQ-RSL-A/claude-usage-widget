@@ -33,6 +33,11 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        MARKETING_VERSION: "0.3.0"
+        CURRENT_PROJECT_VERSION: "3"
+    scheme:
+      testTargets:
+        - ClaudeUsageWidgetTests
 
   ClaudeUsageWidgetTests:
     type: bundle.unit-test

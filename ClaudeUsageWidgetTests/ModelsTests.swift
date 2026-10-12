@@ -3,163 +3,133 @@ import XCTest
 
 final class ModelsTests: XCTestCase {
 
-    // MARK: - RingColorState tests
+    private func bucket(_ kind: BucketKind, _ percent: Double, resetsAt: Date? = nil) -> UsageBucket {
+        UsageBucket(kind: kind, percentUsed: percent, resetsAt: resetsAt, lockedReason: nil)
+    }
 
-    func test_ringColor_belowAmber() {
+    // MARK: - RingColorState (unchanged behaviour)
+
+    func test_ringColor_thresholds() {
         XCTAssertEqual(RingColorState.from(percent: 0.0), .normal)
         XCTAssertEqual(RingColorState.from(percent: 0.59), .normal)
-    }
-
-    func test_ringColor_amber() {
         XCTAssertEqual(RingColorState.from(percent: 0.60), .amber)
         XCTAssertEqual(RingColorState.from(percent: 0.84), .amber)
-    }
-
-    func test_ringColor_critical() {
         XCTAssertEqual(RingColorState.from(percent: 0.85), .critical)
         XCTAssertEqual(RingColorState.from(percent: 1.0), .critical)
-    }
-
-    // MARK: - Ring value (highest % across all stats)
-
-    func test_ringValue_usesHighestMetric() {
-        let data = UsageData(
-            currentSession: UsageStat(percentUsed: 0.78, resetsAt: nil),
-            weeklyAllModels: UsageStat(percentUsed: 0.19, resetsAt: Date()),
-            weeklySonnetOnly: UsageStat(percentUsed: 0.04, resetsAt: Date()),
-            lastUpdated: Date()
-        )
-        XCTAssertEqual(data.ringValue, 0.78, accuracy: 0.001)
-    }
-
-    func test_ringValue_weeklyCanBeHighest() {
-        let data = UsageData(
-            currentSession: UsageStat(percentUsed: 0.10, resetsAt: nil),
-            weeklyAllModels: UsageStat(percentUsed: 0.92, resetsAt: Date()),
-            weeklySonnetOnly: UsageStat(percentUsed: 0.50, resetsAt: Date()),
-            lastUpdated: Date()
-        )
-        XCTAssertEqual(data.ringValue, 0.92, accuracy: 0.001)
-    }
-
-    // MARK: - Reset time formatting
-
-    func test_formatResetsAt_date() {
-        var comps = DateComponents()
-        comps.weekday = 6   // Friday
-        comps.hour = 9
-        comps.minute = 0
-        let cal = Calendar.current
-        let date = cal.nextDate(after: Date(), matching: comps, matchingPolicy: .nextTime)!
-        let stat = UsageStat(percentUsed: 0.2, resetsAt: date)
-        XCTAssertTrue(stat.resetsAtDisplay?.contains("9:00") == true)
-    }
-
-    func test_formatSessionResetsAt_showsCountdown() {
-        let futureDate = Date().addingTimeInterval(2520) // 42 minutes from now
-        let stat = UsageStat(percentUsed: 0.5, resetsAt: futureDate)
-        let display = stat.resetsInDisplay
-        XCTAssertTrue(display.contains("m") || display.contains("h"), "Expected time display, got: \(display)")
-    }
-
-    // MARK: - JSON decoding
-
-    func test_usageData_decodesFromRealAPIShape() throws {
-        let json = """
-        {
-            "five_hour": {
-                "utilization": 8.0,
-                "resets_at": "2026-03-08T00:00:00.582425+00:00"
-            },
-            "seven_day": {
-                "utilization": 7.0,
-                "resets_at": "2026-03-13T16:00:00.582446+00:00"
-            },
-            "seven_day_sonnet": {
-                "utilization": 0.0,
-                "resets_at": "2026-03-14T21:00:00.582455+00:00"
-            },
-            "seven_day_oauth_apps": null,
-            "seven_day_opus": null,
-            "seven_day_cowork": null,
-            "iguana_necktie": null,
-            "extra_usage": {
-                "is_enabled": false,
-                "monthly_limit": null,
-                "used_credits": null,
-                "utilization": null
-            }
-        }
-        """.data(using: .utf8)!
-
-        let data = try UsageData.decode(from: json)
-        XCTAssertEqual(data.currentSession.percentUsed, 0.08, accuracy: 0.001)
-        XCTAssertEqual(data.weeklyAllModels.percentUsed, 0.07, accuracy: 0.001)
-        XCTAssertEqual(data.weeklySonnetOnly.percentUsed, 0.00, accuracy: 0.001)
-        XCTAssertNotNil(data.currentSession.resetsAt)
-        XCTAssertNotNil(data.weeklyAllModels.resetsAt)
-    }
-
-    // MARK: - RingMetricMode tests
-
-    func test_ringValue_sessionMode_returnsSessionPercent() {
-        let data = UsageData(
-            currentSession: UsageStat(percentUsed: 0.42, resetsAt: nil),
-            weeklyAllModels: UsageStat(percentUsed: 0.67, resetsAt: Date()),
-            weeklySonnetOnly: UsageStat(percentUsed: 0.23, resetsAt: Date()),
-            lastUpdated: Date()
-        )
-        XCTAssertEqual(data.ringValue(for: .session), 0.42, accuracy: 0.001)
-    }
-
-    func test_ringValue_weeklyMode_returnsMaxWeekly() {
-        let data = UsageData(
-            currentSession: UsageStat(percentUsed: 0.42, resetsAt: nil),
-            weeklyAllModels: UsageStat(percentUsed: 0.67, resetsAt: Date()),
-            weeklySonnetOnly: UsageStat(percentUsed: 0.23, resetsAt: Date()),
-            lastUpdated: Date()
-        )
-        XCTAssertEqual(data.ringValue(for: .weekly), 0.67, accuracy: 0.001)
-    }
-
-    func test_ringColorState_forMode_usesCorrectValue() {
-        let data = UsageData(
-            currentSession: UsageStat(percentUsed: 0.42, resetsAt: nil),
-            weeklyAllModels: UsageStat(percentUsed: 0.67, resetsAt: Date()),
-            weeklySonnetOnly: UsageStat(percentUsed: 0.23, resetsAt: Date()),
-            lastUpdated: Date()
-        )
-        XCTAssertEqual(data.ringColorState(for: .session), .normal)
-        XCTAssertEqual(data.ringColorState(for: .weekly), .amber)
     }
 
     func test_ringMetricMode_defaultIsSession() {
         XCTAssertEqual(RingMetricMode.default, .session)
     }
 
-    func test_barColorState_perRow() {
-        let normalStat = UsageStat(percentUsed: 0.42, resetsAt: nil)
-        let amberStat = UsageStat(percentUsed: 0.67, resetsAt: nil)
-        let criticalStat = UsageStat(percentUsed: 0.90, resetsAt: nil)
-        XCTAssertEqual(normalStat.barColorState, .normal)
-        XCTAssertEqual(amberStat.barColorState, .amber)
-        XCTAssertEqual(criticalStat.barColorState, .critical)
+    // MARK: - Ring value per mode
+
+    func test_ringValue_sessionMode_returnsSessionPercent() {
+        let data = UsageData(buckets: [bucket(.session, 0.42), bucket(.weeklyAll, 0.67), bucket(.weeklySonnet, 0.23)], extraUsage: nil)
+        XCTAssertEqual(data.ringValue(for: .session), 0.42, accuracy: 0.001)
     }
 
-    func test_ringValue_fromRealData() throws {
-        let json = """
-        {
-            "five_hour": { "utilization": 78.0, "resets_at": "2026-03-08T01:00:00+00:00" },
-            "seven_day": { "utilization": 19.0, "resets_at": "2026-03-13T16:00:00+00:00" },
-            "seven_day_sonnet": { "utilization": 4.0, "resets_at": "2026-03-14T21:00:00+00:00" },
-            "seven_day_oauth_apps": null, "seven_day_opus": null,
-            "seven_day_cowork": null, "iguana_necktie": null,
-            "extra_usage": { "is_enabled": false, "monthly_limit": null, "used_credits": null, "utilization": null }
-        }
-        """.data(using: .utf8)!
+    func test_ringValue_weeklyMode_returnsMaxWeekly() {
+        let data = UsageData(buckets: [bucket(.session, 0.42), bucket(.weeklyAll, 0.67), bucket(.weeklyOpus, 0.80), bucket(.weeklySonnet, 0.23)], extraUsage: nil)
+        XCTAssertEqual(data.ringValue(for: .weekly), 0.80, accuracy: 0.001)
+    }
 
-        let data = try UsageData.decode(from: json)
-        XCTAssertEqual(data.ringValue, 0.78, accuracy: 0.001)
-        XCTAssertEqual(data.ringColorState, .amber)
+    func test_ringValue_missingBuckets_isZero() {
+        let weeklyOnly = UsageData(buckets: [bucket(.weeklyAll, 0.5)], extraUsage: nil)
+        XCTAssertEqual(weeklyOnly.ringValue(for: .session), 0.0, accuracy: 0.001)
+        let sessionOnly = UsageData(buckets: [bucket(.session, 0.5)], extraUsage: nil)
+        XCTAssertEqual(sessionOnly.ringValue(for: .weekly), 0.0, accuracy: 0.001)
+        XCTAssertEqual(UsageData(buckets: [], extraUsage: nil).ringValue(for: .session), 0.0, accuracy: 0.001)
+    }
+
+    func test_ringColorState_forMode() {
+        let data = UsageData(buckets: [bucket(.session, 0.42), bucket(.weeklyAll, 0.67)], extraUsage: nil)
+        XCTAssertEqual(data.ringColorState(for: .session), .normal)
+        XCTAssertEqual(data.ringColorState(for: .weekly), .amber)
+    }
+
+    // MARK: - Bucket display
+
+    func test_barColorState_perBucket() {
+        XCTAssertEqual(bucket(.session, 0.42).barColorState, .normal)
+        XCTAssertEqual(bucket(.session, 0.67).barColorState, .amber)
+        XCTAssertEqual(bucket(.session, 0.90).barColorState, .critical)
+    }
+
+    func test_resetsInDisplay_future_showsCountdown() {
+        let display = bucket(.session, 0.5, resetsAt: Date().addingTimeInterval(2520)).resetsInDisplay
+        XCTAssertTrue(display.hasPrefix("resets in"), display)
+        XCTAssertTrue(display.contains("m"), display)
+    }
+
+    func test_resetsInDisplay_pastDate_showsPlaceholder() {
+        XCTAssertEqual(bucket(.session, 0.5, resetsAt: Date().addingTimeInterval(-60)).resetsInDisplay, "–")
+        XCTAssertEqual(bucket(.session, 0.5, resetsAt: nil).resetsInDisplay, "–")
+    }
+
+    func test_resetsAtDisplay_formatsClockTime() {
+        var comps = DateComponents()
+        comps.weekday = 6
+        comps.hour = 9
+        comps.minute = 0
+        let date = Calendar.current.nextDate(after: Date(), matching: comps, matchingPolicy: .nextTime)!
+        XCTAssertTrue(bucket(.weeklyAll, 0.2, resetsAt: date).resetsAtDisplay?.contains("9:00") == true)
+        XCTAssertNil(bucket(.weeklyAll, 0.2, resetsAt: nil).resetsAtDisplay)
+    }
+
+    func test_bucketKind_labelsAndWeeklyFlag() {
+        XCTAssertEqual(BucketKind.session.label, "Current Session")
+        XCTAssertEqual(BucketKind.weeklyAll.label, "Weekly (all models)")
+        XCTAssertEqual(BucketKind.weeklyOpus.label, "Weekly (Opus)")
+        XCTAssertEqual(BucketKind.weeklySonnet.label, "Weekly (Sonnet)")
+        XCTAssertFalse(BucketKind.session.isWeekly)
+        XCTAssertTrue(BucketKind.weeklyOpus.isWeekly)
+    }
+
+    // MARK: - Decoding real shapes
+
+    func test_decode_max20x_dropsNullBucketsAndIgnoresNoise() throws {
+        let data = try UsageData.decode(from: Data(Fixtures.usageMax20xJSON.utf8))
+        XCTAssertEqual(data.buckets.map(\.kind), [.session, .weeklyAll])
+        XCTAssertEqual(data.bucket(.session)?.percentUsed ?? -1, 0.08, accuracy: 0.001)
+        XCTAssertEqual(data.bucket(.weeklyAll)?.percentUsed ?? -1, 0.73, accuracy: 0.001)
+        XCTAssertNotNil(data.bucket(.session)?.resetsAt)
+        XCTAssertNil(data.bucket(.weeklySonnet))
+        XCTAssertEqual(data.extraUsage, ExtraUsage(isEnabled: false, percentUsed: nil))
+    }
+
+    func test_decode_proLike_keepsOpusSonnetAndExtraUsage() throws {
+        let data = try UsageData.decode(from: Data(Fixtures.usageProLikeJSON.utf8))
+        XCTAssertEqual(data.buckets.map(\.kind), [.session, .weeklyAll, .weeklyOpus, .weeklySonnet])
+        XCTAssertEqual(data.bucket(.weeklyOpus)?.percentUsed ?? -1, 0.40, accuracy: 0.001)
+        XCTAssertEqual(data.extraUsage?.isEnabled, true)
+        XCTAssertEqual(data.extraUsage?.percentUsed ?? -1, 0.35, accuracy: 0.001)
+    }
+
+    func test_decode_minimal_hasTwoBuckets() throws {
+        let data = try UsageData.decode(from: Data(Fixtures.usageMinimalJSON.utf8))
+        XCTAssertEqual(data.buckets.count, 2)
+        XCTAssertNil(data.extraUsage)
+    }
+
+    func test_decode_nullSession_keepsWeekly() throws {
+        let data = try UsageData.decode(from: Data(Fixtures.usageNoSessionJSON.utf8))
+        XCTAssertEqual(data.buckets.map(\.kind), [.weeklyAll])
+        XCTAssertEqual(data.ringValue(for: .session), 0.0, accuracy: 0.001)
+    }
+
+    func test_decode_skipsBucketWithNullUtilization() throws {
+        let data = try UsageData.decode(from: Data(Fixtures.usageNullUtilizationJSON.utf8))
+        XCTAssertEqual(data.buckets.map(\.kind), [.weeklyAll])
+        XCTAssertNil(data.bucket(.weeklyAll)?.resetsAt)
+    }
+
+    func test_decode_wholeSecondDates() throws {
+        let data = try UsageData.decode(from: Data(#"{"five_hour": {"utilization": 78, "resets_at": "2026-03-08T01:00:00+00:00"}}"#.utf8))
+        XCTAssertNotNil(data.bucket(.session)?.resetsAt)
+    }
+
+    func test_decode_garbage_throws() {
+        XCTAssertThrowsError(try UsageData.decode(from: Data("<html>".utf8)))
     }
 }

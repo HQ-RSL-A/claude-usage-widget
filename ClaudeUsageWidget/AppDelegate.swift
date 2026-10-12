@@ -1,6 +1,6 @@
 import AppKit
-import WebKit
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Components
@@ -8,32 +8,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var menuViewController: MenuViewController!
+    private var client: ClaudeAPIClient!
     private var authManager: AuthManager!
     private var usageService: UsageService?
-    private var pollingStarted = false
     private var ringMetricMode: RingMetricMode = .saved
-
-    // WKWebView lives here permanently — it holds the session cookies
-    private var webView: WKWebView!
 
     // MARK: - App Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        setupStatusItem()
+        setupStatusItem()                 // before any WebKit object exists (Sonoma NSStatusBar issue)
         setupPopover()
-        setupWebView()
-        setupAuthManager()
+        client = ClaudeAPIClient()
+        authManager = AuthManager(client: client)
+        authManager.delegate = self
+        Task { await authManager.checkAuthStatus() }
     }
 
     // MARK: - Setup
-
-    private func setupWebView() {
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = WKWebsiteDataStore.default()
-        webView = WKWebView(frame: .zero, configuration: config)
-        webView.navigationDelegate = self
-    }
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -47,14 +39,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupPopover() {
         menuViewController = MenuViewController()
         menuViewController.onRefresh = { [weak self] in
-            self?.usageService?.fetch()
+            guard let self else { return }
+            if case .signedIn = self.authManager.state {
+                self.usageService?.fetch()
+            } else {
+                Task { await self.authManager.checkAuthStatus() }
+            }
         }
-        menuViewController.onSignOut = { [weak self] in
-            self?.signOut()
-        }
-        menuViewController.onSignIn = { [weak self] in
-            self?.authManager.showLoginWindow()
-        }
+        menuViewController.onSignOut = { [weak self] in self?.signOut() }
+        menuViewController.onSignIn = { [weak self] in self?.authManager.showLoginWindow() }
         menuViewController.onToggleMode = { [weak self] mode in
             guard let self = self else { return }
             self.ringMetricMode = mode
@@ -68,13 +61,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover = NSPopover()
         popover.contentViewController = menuViewController
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 300, height: 280)
-    }
-
-    private func setupAuthManager() {
-        authManager = AuthManager()
-        authManager.delegate = self
-        authManager.checkAuthStatus()
     }
 
     // MARK: - Status Icon
@@ -98,25 +84,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Usage Service
 
-    private func startUsageService() {
-        if usageService == nil {
-            usageService = UsageService(webView: webView)
-            usageService?.delegate = self
-        }
+    private func startUsageService(for org: Organization) {
+        if let service = usageService, service.orgId == org.uuid { return }
+        stopUsageService()
+        let service = UsageService(client: client, orgId: org.uuid)
+        service.delegate = self
+        usageService = service
         menuViewController.showLoading()
-        // Load claude.ai first — polling starts in webView(_:didFinish:) once the page is ready
-        webView.load(URLRequest(url: URL(string: "https://claude.ai")!))
+        service.start()
+    }
+
+    private func stopUsageService() {
+        usageService?.stop()
+        usageService = nil
+        updateStatusIcon(progress: 0.0, colorState: .normal)
     }
 
     // MARK: - Sign Out
 
     private func signOut() {
-        usageService?.stopPolling()
-        usageService?.resetCache()
-        usageService = nil
-        pollingStarted = false
-        updateStatusIcon(progress: 0.0, colorState: .normal)
-        menuViewController.updateAuthState(isSignedIn: false)
+        stopUsageService()
         authManager.signOut()
     }
 }
@@ -124,24 +111,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - AuthManagerDelegate
 
 extension AppDelegate: AuthManagerDelegate {
-    func authManagerDidAuthenticate(_ manager: AuthManager) {
-        menuViewController.updateAuthState(isSignedIn: true)
-        startUsageService()
-    }
-
-    func authManagerDidSignOut(_ manager: AuthManager) {
-        menuViewController.updateAuthState(isSignedIn: false)
-    }
-}
-
-// MARK: - WKNavigationDelegate (main webView)
-
-extension AppDelegate: WKNavigationDelegate {
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Main webView finished loading claude.ai — now safe to run authenticated JS
-        guard usageService != nil, !pollingStarted else { return }
-        pollingStarted = true
-        usageService?.startPolling()
+    func authManager(_ manager: AuthManager, didChange state: AuthState) {
+        menuViewController.render(state: state)
+        switch state {
+        case .signedIn(let org, _):
+            startUsageService(for: org)
+        default:
+            stopUsageService()
+        }
     }
 }
 
@@ -149,24 +126,20 @@ extension AppDelegate: WKNavigationDelegate {
 
 extension AppDelegate: UsageServiceDelegate {
     func usageService(_ service: UsageService, didUpdate data: UsageData) {
-        let progress = data.ringValue(for: ringMetricMode)
-        let colorState = data.ringColorState(for: ringMetricMode)
-        updateStatusIcon(progress: progress, colorState: colorState)
+        guard service === usageService else { return }   // a poll that finished after sign-out or expiry
+        updateStatusIcon(progress: data.ringValue(for: ringMetricMode), colorState: data.ringColorState(for: ringMetricMode))
         menuViewController.update(with: data)
     }
 
-    func usageService(_ service: UsageService, didFailWith error: UsageServiceError) {
-        let message: String
-        switch error {
-        case .notAuthenticated:
-            message = "Not signed in"
-        case .orgIdNotFound:
-            message = "Could not find org"
-        case .networkError(let desc):
-            message = desc
-        case .parseError(let desc):
-            message = desc
-        }
+    func usageService(_ service: UsageService, didFailWith error: ClaudeAPIError) {
+        guard service === usageService else { return }
+        var message = error.userMessage
+        if case .decode = error { message += " (v\(MenuViewController.appVersion))" }   // bug reports need the version
         menuViewController.showError(message)
+    }
+
+    func usageServiceDidDetectSessionExpiry(_ service: UsageService) {
+        guard service === usageService else { return }
+        authManager.sessionDidExpire()
     }
 }
