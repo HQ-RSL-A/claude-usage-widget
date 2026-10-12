@@ -102,8 +102,8 @@ final class AuthManager {
     // MARK: - Sign out
 
     func signOut() {
-        dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {
-            Task { @MainActor [weak self] in
+        dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { [weak self] in
+            Task { @MainActor in
                 guard let self else { return }
                 self.client.reset()
                 self.expiryWindowShown = false
