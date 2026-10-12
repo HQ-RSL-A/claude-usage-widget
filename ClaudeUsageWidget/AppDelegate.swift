@@ -1,5 +1,4 @@
 import AppKit
-import WebKit
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -12,19 +11,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var client: ClaudeAPIClient!
     private var authManager: AuthManager!
     private var usageService: UsageService?
-    private var pollingStarted = false
     private var ringMetricMode: RingMetricMode = .saved
-
-    // WKWebView lives here permanently — it holds the session cookies
-    private var webView: WKWebView!
 
     // MARK: - App Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        setupStatusItem()
+        setupStatusItem()                 // before any WebKit object exists (Sonoma NSStatusBar issue)
         setupPopover()
-        setupWebView()                      // feeds the old UsageService until Task 7
         client = ClaudeAPIClient()
         authManager = AuthManager(client: client)
         authManager.delegate = self
@@ -32,13 +26,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Setup
-
-    private func setupWebView() {
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = WKWebsiteDataStore.default()
-        webView = WKWebView(frame: .zero, configuration: config)
-        webView.navigationDelegate = self
-    }
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -97,25 +84,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Usage Service
 
-    private func startUsageService() {
-        if usageService == nil {
-            usageService = UsageService(webView: webView)
-            usageService?.delegate = self
-        }
+    private func startUsageService(for org: Organization) {
+        if let service = usageService, service.orgId == org.uuid { return }
+        stopUsageService()
+        let service = UsageService(client: client, orgId: org.uuid)
+        service.delegate = self
+        usageService = service
         menuViewController.showLoading()
-        // Load claude.ai first — polling starts in webView(_:didFinish:) once the page is ready
-        webView.load(URLRequest(url: URL(string: "https://claude.ai")!))
+        service.start()
+    }
+
+    private func stopUsageService() {
+        usageService?.stop()
+        usageService = nil
+        updateStatusIcon(progress: 0.0, colorState: .normal)
     }
 
     // MARK: - Sign Out
-
-    private func stopUsageService() {
-        usageService?.stopPolling()
-        usageService?.resetCache()
-        usageService = nil
-        pollingStarted = false
-        updateStatusIcon(progress: 0.0, colorState: .normal)
-    }
 
     private func signOut() {
         stopUsageService()
@@ -129,22 +114,11 @@ extension AppDelegate: AuthManagerDelegate {
     func authManager(_ manager: AuthManager, didChange state: AuthState) {
         menuViewController.render(state: state)
         switch state {
-        case .signedIn:
-            startUsageService()
+        case .signedIn(let org, _):
+            startUsageService(for: org)
         default:
             stopUsageService()
         }
-    }
-}
-
-// MARK: - WKNavigationDelegate (main webView)
-
-extension AppDelegate: WKNavigationDelegate {
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Main webView finished loading claude.ai — now safe to run authenticated JS
-        guard usageService != nil, !pollingStarted else { return }
-        pollingStarted = true
-        usageService?.startPolling()
     }
 }
 
@@ -152,24 +126,17 @@ extension AppDelegate: WKNavigationDelegate {
 
 extension AppDelegate: UsageServiceDelegate {
     func usageService(_ service: UsageService, didUpdate data: UsageData) {
-        let progress = data.ringValue(for: ringMetricMode)
-        let colorState = data.ringColorState(for: ringMetricMode)
-        updateStatusIcon(progress: progress, colorState: colorState)
+        updateStatusIcon(progress: data.ringValue(for: ringMetricMode), colorState: data.ringColorState(for: ringMetricMode))
         menuViewController.update(with: data)
     }
 
-    func usageService(_ service: UsageService, didFailWith error: UsageServiceError) {
-        let message: String
-        switch error {
-        case .notAuthenticated:
-            message = "Not signed in"
-        case .orgIdNotFound:
-            message = "Could not find org"
-        case .networkError(let desc):
-            message = desc
-        case .parseError(let desc):
-            message = desc
-        }
+    func usageService(_ service: UsageService, didFailWith error: ClaudeAPIError) {
+        var message = error.userMessage
+        if case .decode = error { message += " (v\(MenuViewController.appVersion))" }   // bug reports need the version
         menuViewController.showError(message)
+    }
+
+    func usageServiceDidDetectSessionExpiry(_ service: UsageService) {
+        authManager.sessionDidExpire()
     }
 }

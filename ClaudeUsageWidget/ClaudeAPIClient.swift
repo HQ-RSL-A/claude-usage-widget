@@ -15,9 +15,9 @@ final class ClaudeAPIClient: NSObject, ClaudeAPI {
     private var readyContinuations: [CheckedContinuation<Void, Error>] = []
     private var timeoutTask: Task<Void, Never>?
 
-    init(dataStore: WKWebsiteDataStore = .default()) {
+    init(dataStore: WKWebsiteDataStore? = nil) {
         let config = WKWebViewConfiguration()
-        config.websiteDataStore = dataStore
+        config.websiteDataStore = dataStore ?? .default()
         webView = WKWebView(frame: .zero, configuration: config)
         super.init()
         webView.navigationDelegate = self

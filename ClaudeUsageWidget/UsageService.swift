@@ -1,120 +1,69 @@
 import Foundation
-import WebKit
 
+@MainActor
 protocol UsageServiceDelegate: AnyObject {
     func usageService(_ service: UsageService, didUpdate data: UsageData)
-    func usageService(_ service: UsageService, didFailWith error: UsageServiceError)
+    func usageService(_ service: UsageService, didFailWith error: ClaudeAPIError)
+    func usageServiceDidDetectSessionExpiry(_ service: UsageService)
 }
 
-enum UsageServiceError: Error, Equatable {
-    case notAuthenticated
-    case networkError(String)
-    case parseError(String)
-    case orgIdNotFound
-}
-
-class UsageService: NSObject {
+/// Polls one org's usage every five minutes. Stops itself and reports when the session is gone.
+@MainActor
+final class UsageService {
     weak var delegate: UsageServiceDelegate?
-    private weak var webView: WKWebView?
-    private var timer: Timer?
-    private var cachedOrgId: String?
-    private(set) var lastData: UsageData?
 
-    init(webView: WKWebView) {
-        self.webView = webView
+    let orgId: String
+    var pollInterval: TimeInterval = 300
+    private(set) var lastData: UsageData?
+    private(set) var isPolling = false
+
+    private let client: ClaudeAPI
+    private var timer: Timer?
+
+    init(client: ClaudeAPI, orgId: String) {
+        self.client = client
+        self.orgId = orgId
     }
 
-    // Start polling every 5 minutes. Also fetches immediately.
-    func startPolling() {
+    func start() {
+        stop()
+        isPolling = true
         fetch()
-        timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-            self?.fetch()
+        timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.fetch() }
         }
     }
 
-    func stopPolling() {
+    func stop() {
         timer?.invalidate()
         timer = nil
+        isPolling = false
     }
 
-    // Manual refresh trigger
+    /// Manual refresh trigger
     func fetch() {
-        guard let webView = webView else {
-            delegate?.usageService(self, didFailWith: .notAuthenticated)
-            return
-        }
-
-        if let orgId = cachedOrgId {
-            fetchUsage(webView: webView, orgId: orgId)
-        } else {
-            resolveOrgId(webView: webView) { [weak self] result in
-                guard let self = self else { return }
-                switch result {
-                case .success(let orgId):
-                    self.cachedOrgId = orgId
-                    self.fetchUsage(webView: webView, orgId: orgId)
-                case .failure(let error):
-                    self.delegate?.usageService(self, didFailWith: error)
-                }
-            }
-        }
+        Task { await fetchNow() }
     }
 
-    // MARK: - Internal fetch steps
-
-    private func resolveOrgId(webView: WKWebView, completion: @escaping (Result<String, UsageServiceError>) -> Void) {
-        // callAsyncJavaScript properly awaits Promises — evaluateJavaScript cannot
-        let js = "return await fetch('https://claude.ai/api/organizations').then(r => r.json()).then(d => JSON.stringify(d))"
-        webView.callAsyncJavaScript(js, arguments: [:], in: nil, in: .defaultClient) { result in
-            DispatchQueue.main.async {
-                switch result {
-                case .failure(let error):
-                    completion(.failure(.networkError(error.localizedDescription)))
-                case .success(let value):
-                    guard let jsonString = value as? String,
-                          let data = jsonString.data(using: .utf8),
-                          let orgs = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-                          let firstOrg = orgs.first,
-                          let uuid = firstOrg["uuid"] as? String else {
-                        completion(.failure(.orgIdNotFound))
-                        return
-                    }
-                    completion(.success(uuid))
+    func fetchNow() async {
+        do {
+            let response = try await client.get("/api/organizations/\(orgId)/usage")
+            if let error = ClaudeAPIError.classify(response) {
+                if error == .sessionExpired {
+                    stop()
+                    delegate?.usageServiceDidDetectSessionExpiry(self)
+                } else {
+                    delegate?.usageService(self, didFailWith: error)
                 }
+                return
             }
+            let data = try UsageData.decode(from: response.body)
+            lastData = data
+            delegate?.usageService(self, didUpdate: data)
+        } catch let error as ClaudeAPIError {
+            delegate?.usageService(self, didFailWith: error)
+        } catch {
+            delegate?.usageService(self, didFailWith: .decode(error.localizedDescription))
         }
-    }
-
-    private func fetchUsage(webView: WKWebView, orgId: String) {
-        let url = "https://claude.ai/api/organizations/\(orgId)/usage"
-        let js = "return await fetch('\(url)').then(r => r.json()).then(d => JSON.stringify(d))"
-        webView.callAsyncJavaScript(js, arguments: [:], in: nil, in: .defaultClient) { [weak self] result in
-            guard let self = self else { return }
-            DispatchQueue.main.async {
-                switch result {
-                case .failure(let error):
-                    self.delegate?.usageService(self, didFailWith: .networkError(error.localizedDescription))
-                case .success(let value):
-                    guard let jsonString = value as? String,
-                          let data = jsonString.data(using: .utf8) else {
-                        self.delegate?.usageService(self, didFailWith: .parseError("Invalid response"))
-                        return
-                    }
-                    do {
-                        let usageData = try UsageData.decode(from: data)
-                        self.lastData = usageData
-                        self.delegate?.usageService(self, didUpdate: usageData)
-                    } catch {
-                        self.delegate?.usageService(self, didFailWith: .parseError(error.localizedDescription))
-                    }
-                }
-            }
-        }
-    }
-
-    // Clears the cached org ID (e.g., after sign-out)
-    func resetCache() {
-        cachedOrgId = nil
-        lastData = nil
     }
 }

@@ -1,67 +1,84 @@
 import XCTest
-import WebKit
 @testable import ClaudeUsageWidget
 
+@MainActor
 final class UsageServiceTests: XCTestCase {
 
-    // MARK: - UsageServiceError
-
-    func test_error_notAuthenticated_equatable() {
-        XCTAssertEqual(UsageServiceError.notAuthenticated, UsageServiceError.notAuthenticated)
+    private final class SpyDelegate: UsageServiceDelegate {
+        var updates: [UsageData] = []
+        var failures: [ClaudeAPIError] = []
+        var expiries = 0
+        func usageService(_ service: UsageService, didUpdate data: UsageData) { updates.append(data) }
+        func usageService(_ service: UsageService, didFailWith error: ClaudeAPIError) { failures.append(error) }
+        func usageServiceDidDetectSessionExpiry(_ service: UsageService) { expiries += 1 }
     }
 
-    func test_error_orgIdNotFound_equatable() {
-        XCTAssertEqual(UsageServiceError.orgIdNotFound, UsageServiceError.orgIdNotFound)
+    private var api: FakeClaudeAPI!
+    private var service: UsageService!
+    private var spy: SpyDelegate!
+
+    override func setUp() {
+        super.setUp()
+        api = FakeClaudeAPI()
+        service = UsageService(client: api, orgId: "chat-org")
+        spy = SpyDelegate()
+        service.delegate = spy
     }
 
-    func test_error_networkError_equatable() {
-        XCTAssertEqual(UsageServiceError.networkError("timeout"), UsageServiceError.networkError("timeout"))
-        XCTAssertNotEqual(UsageServiceError.networkError("timeout"), UsageServiceError.networkError("404"))
-    }
-
-    func test_error_parseError_equatable() {
-        XCTAssertEqual(UsageServiceError.parseError("bad json"), UsageServiceError.parseError("bad json"))
-    }
-
-    // MARK: - Initial state
-
-    func test_initialState_lastDataIsNil() {
-        let config = WKWebViewConfiguration()
-        let webView = WKWebView(frame: .zero, configuration: config)
-        let service = UsageService(webView: webView)
+    func test_initialState() {
         XCTAssertNil(service.lastData)
+        XCTAssertFalse(service.isPolling)
     }
 
-    func test_resetCache_clearsLastData() throws {
-        let config = WKWebViewConfiguration()
-        let webView = WKWebView(frame: .zero, configuration: config)
-        let service = UsageService(webView: webView)
-
-        // Simulate having data by decoding a real JSON
-        let json = """
-        {
-            "five_hour": { "utilization": 50.0, "resets_at": "2026-03-08T01:00:00+00:00" },
-            "seven_day": { "utilization": 20.0, "resets_at": "2026-03-13T16:00:00+00:00" },
-            "seven_day_sonnet": { "utilization": 5.0, "resets_at": "2026-03-14T21:00:00+00:00" },
-            "seven_day_oauth_apps": null, "seven_day_opus": null,
-            "seven_day_cowork": null, "iguana_necktie": null,
-            "extra_usage": { "is_enabled": false, "monthly_limit": null, "used_credits": null, "utilization": null }
-        }
-        """.data(using: .utf8)!
-
-        // Set lastData by force using the decode path (same logic UsageService uses internally)
-        let decoded = try UsageData.decode(from: json)
-        // We can't set lastData directly (it's private(set)), so test resetCache on its effect
-        // Instead, verify the service initializes cleanly and resetCache is callable without crash
-        service.resetCache()
-        XCTAssertNil(service.lastData)
-        _ = decoded // suppress unused warning
+    func test_fetch_success_updatesDelegateAndLastData_usingOrgPath() async {
+        api.responses = [.success(Fixtures.response(200, Fixtures.usageMax20xJSON))]
+        await service.fetchNow()
+        XCTAssertEqual(api.paths, ["/api/organizations/chat-org/usage"])
+        XCTAssertEqual(spy.updates.count, 1)
+        XCTAssertEqual(spy.updates.first?.buckets.map(\.kind), [.session, .weeklyAll])
+        XCTAssertNotNil(service.lastData)
+        XCTAssertTrue(spy.failures.isEmpty)
     }
 
-    func test_stopPolling_doesNotCrash() {
-        let config = WKWebViewConfiguration()
-        let webView = WKWebView(frame: .zero, configuration: config)
-        let service = UsageService(webView: webView)
-        service.stopPolling() // Should not crash even before startPolling
+    func test_fetch_sessionInvalid_reportsExpiryAndStopsPolling() async {
+        api.responses = [.success(Fixtures.sessionInvalid403)]
+        service.start()
+        XCTAssertTrue(service.isPolling)
+        await service.fetchNow()
+        XCTAssertEqual(spy.expiries, 1)
+        XCTAssertTrue(spy.failures.isEmpty)
+        XCTAssertFalse(service.isPolling)
+    }
+
+    func test_fetch_serverError_reportsFailure_keepsLastData() async {
+        api.responses = [.success(Fixtures.response(200, Fixtures.usageMinimalJSON)), .success(Fixtures.server500)]
+        await service.fetchNow()
+        await service.fetchNow()
+        XCTAssertEqual(spy.failures, [.server(500)])
+        XCTAssertEqual(service.lastData?.buckets.count, 2)
+    }
+
+    func test_fetch_transportFailure_reportsFailure() async {
+        api.responses = [.failure(.transport("offline"))]
+        await service.fetchNow()
+        XCTAssertEqual(spy.failures, [.transport("offline")])
+    }
+
+    func test_fetch_undecodableBody_reportsDecodeFailure() async {
+        api.responses = [.success(Fixtures.response(200, "<html>"))]
+        await service.fetchNow()
+        guard case .decode = spy.failures.first else { return XCTFail("\(spy.failures)") }
+    }
+
+    func test_fetch_permissionDenied_reportsForbidden_notExpiry() async {
+        api.responses = [.success(Fixtures.permissionDenied403)]
+        await service.fetchNow()
+        XCTAssertEqual(spy.expiries, 0)
+        XCTAssertEqual(spy.failures, [.forbidden("Permission denied.")])
+    }
+
+    func test_stop_beforeStart_doesNotCrash() {
+        service.stop()
+        XCTAssertFalse(service.isPolling)
     }
 }

@@ -33,9 +33,9 @@ final class AuthManager {
     private var loginWindow: LoginWindowController?
     private var expiryWindowShown = false
 
-    init(client: ClaudeAPI, dataStore: WKWebsiteDataStore = .default()) {
+    init(client: ClaudeAPI, dataStore: WKWebsiteDataStore? = nil) {
         self.client = client
-        self.dataStore = dataStore
+        self.dataStore = dataStore ?? .default()
     }
 
     // MARK: - Launch
