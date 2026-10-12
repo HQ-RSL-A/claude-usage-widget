@@ -85,9 +85,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Usage Service
 
     private func startUsageService(for org: Organization) {
-        if let service = usageService, service.orgId == org.uuid { return }
+        if let service = usageService, service.identity == .webSession { return }
         stopUsageService()
-        let service = UsageService(client: client, orgId: org.uuid)
+        let service = UsageService(source: WebSessionUsageSource(client: client, orgId: org.uuid))
         service.delegate = self
         usageService = service
         menuViewController.showLoading()
