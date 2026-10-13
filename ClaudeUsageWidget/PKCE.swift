@@ -16,8 +16,10 @@ struct PKCE: Equatable {
         Data(SHA256.hash(data: Data(verifier.utf8))).base64URLEncoded()
     }
 
+    /// 32 bytes (43 characters). A 16-byte state loads the consent page but is refused at Authorize
+    /// with "Invalid request format".
     static func randomState() -> String {
-        randomBytes(16).base64URLEncoded()
+        randomBytes(32).base64URLEncoded()
     }
 
     private static func randomBytes(_ count: Int) -> Data {
