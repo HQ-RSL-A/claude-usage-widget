@@ -2,9 +2,13 @@
 
 Newest entry on top.
 
+## 2026-10-12 20:07 PT
+
+v0.4.2 released and everything older removed, at Rahul's request ("only the latest one is there, and no old version exists"). Release: https://github.com/HQ-RSL-A/claude-usage-widget/releases/tag/v0.4.2 (merge `b21133b`, 153 tests green locally and on CI, DMG attached). Then deleted from GitHub: releases v0.1.1, v0.1.2, v0.2.1, v0.3.0, v0.4.0, v0.4.1 with their DMGs, tags v0.1.0 through v0.4.1, and the merged leftover branch `v0.3.0-sign-in-for-anyone`. GitHub now has one branch (`main`), one tag and one release (`v0.4.2`). Commit history is untouched; the commits the old tags pointed at, should one ever be needed again: v0.1.0 `370ce1b39e22`, v0.1.1 `7a9ee1f6a895`, v0.1.2 `42f07e9eddb3`, v0.2.1 `9894900eff2f`, v0.3.0 `e3ae2503c4a7`, v0.4.0 `7c0e5ede7f23`, v0.4.1 `20a6a086e926`. Also deleted every copy of the app on Rahul's Mac: the running build and the repo's `build/` folder, a v0.3.0 app and the v0.3.0 and v0.4.0 DMGs sitting in the Trash, and the session's build folders. A Spotlight and file sweep found none left. Not deleted: the widget's saved data (Keychain item `io.rsla.ClaudeUsageWidget`, WebKit and cache folders), so a fresh install of v0.4.2 comes up signed in.
+
 ## 2026-10-12 20:03 PT
 
-v0.4.2 (branch `feat/popover-outside-click`). Rahul asked that a click anywhere outside the open popover put it back in the menu bar. Reproduced first on v0.4.1 by driving the real app through Accessibility: status item pressed, empty menu bar clicked, popover still open. Cause: `.transient` does not dismiss for an accessory app that is never active. Fix: `OutsideClickDismisser` with a global mouse-down monitor, armed while the popover is shown. 153 tests. Verified on the built 0.4.2 app the same way: closes on an outside click (twice in a row, so the monitor re-arms), stays open on a click inside, and the status item still closes it.
+v0.4.2 (released the same evening, see the entry above). Rahul asked that a click anywhere outside the open popover put it back in the menu bar. Reproduced first on v0.4.1 by driving the real app through Accessibility: status item pressed, empty menu bar clicked, popover still open. Cause: `.transient` does not dismiss for an accessory app that is never active. Fix: `OutsideClickDismisser` with a global mouse-down monitor, armed while the popover is shown. 153 tests. Verified on the built 0.4.2 app the same way: closes on an outside click (twice in a row, so the monitor re-arms), stays open on a click inside, and the status item still closes it.
 
 ## 2026-10-12 19:49 PT
 
