@@ -7,7 +7,7 @@ Native macOS menu bar app (Swift + AppKit) showing Claude.ai plan usage at a gla
 - **GitHub:** `HQ-RSL-A/claude-usage-widget`
 - **Distribution:** `.dmg` via GitHub Releases (GitHub Actions)
 - **Target:** macOS 13+ (Ventura and later)
-- **Current version:** v0.4.0
+- **Current version:** v0.4.1
 
 ## Stack
 
@@ -27,6 +27,7 @@ Native macOS menu bar app (Swift + AppKit) showing Claude.ai plan usage at a gla
 - **Signed-out signal is HTTP 403 with `error_code: account_session_invalid`** (or 401). A bare 403 is a per-org permission problem (the API console org), never a sign-out
 - **Only `chat`-capable orgs may be selected** (`Organization.pickChatOrg`); console orgs always 403 on usage
 - **Every OAuth request carries** `anthropic-beta: oauth-2025-04-20` and `User-Agent: ClaudeUsageWidget/<version> (macOS)`; Cloudflare in front of `platform.claude.com` rejects anonymous-looking clients
+- **OAuth `state` is 32 random bytes (43 characters).** A 16-byte state loads the consent page but is refused at Authorize with "Invalid request format" (v0.4.0 bug). A URL that loads the consent page proves nothing about the Authorize step
 - **Never use Claude Code's refresh token.** Read its access token, nothing else; refreshing it would break Claude Code
 - **Tokens live in the Keychain or memory**, never UserDefaults, logs or files. Tests touch only `io.rsla.ClaudeUsageWidget.tests*` Keychain services
 

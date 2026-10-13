@@ -76,7 +76,7 @@ The browser route uses Anthropic's OAuth as Claude Code does; Anthropic publishe
 
 ## Status
 
-v0.4.0 - sign in with your browser or reuse Claude Code's sign-in. macOS only.
+v0.4.1 - sign in with your browser or reuse Claude Code's sign-in. macOS only.
 
 ---
 

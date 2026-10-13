@@ -62,6 +62,7 @@ claude-usage-widget/
 ## OAuth (verified 2026-10-12)
 
 - Authorize: `https://claude.com/cai/oauth/authorize` with `code=true`, `client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e` (Claude Code's public client; no third-party registration exists), `response_type=code`, `redirect_uri=http://localhost:<port>/callback`, `scope=user:profile user:inference`, `code_challenge` (S256), `state`
+- `state` length matters: 22 characters (16 bytes) is refused at the Authorize click with "Authorization failed / Invalid request format"; 32 and 43 characters are accepted. The consent page loads either way, and URL encoding (`%20` or `+`, encoded or plain `redirect_uri`) makes no difference. The app sends 32 bytes
 - Token: `POST https://platform.claude.com/v1/oauth/token`, JSON `{grant_type: authorization_code, code, state, client_id, redirect_uri, code_verifier}` or `{grant_type: refresh_token, refresh_token, client_id}` -> `{access_token, refresh_token, expires_in: 28800, refresh_token_expires_in, scope, token_type, token_uuid, account, organization}`; 400 `{error, error_description}` when refused; Cloudflare 403 error 1010 for anonymous User-Agents
 - Usage: `GET https://api.anthropic.com/api/oauth/usage` (Bearer) -> same shape as the web endpoint (`five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`, `extra_usage`, codenamed nulls, plus a `limits` array); 401 without a valid token
 - Profile: `GET https://api.anthropic.com/api/oauth/profile` -> `{account: {email, display_name, full_name, has_claude_max, has_claude_pro}, organization: {name, organization_type, rate_limit_tier, ...}}`
@@ -84,7 +85,7 @@ Ring shows session usage by default, configurable via popover toggle. Weekly mod
 
 ## Testing
 
-- `xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO` (145 tests as of v0.4.0); CI runs the same on every push to `main`
+- `xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO` (146 tests as of v0.4.1); CI runs the same on every push to `main`
 - `StubURLProtocol` answers OAuth requests; `FakeClaudeAPI` scripts web-session responses; `FakeCallbackServer`, `InMemoryTokenStore`, `FakeClaudeCodeCredentials` drive the coordinator; `CallbackServerTests` make real localhost requests; one Keychain round trip runs under `io.rsla.ClaudeUsageWidget.tests`
 - Manual pass before a release: Claude Code route, browser route with Google, cancel, forced refresh, upgrade path (plan Task 9)
 
