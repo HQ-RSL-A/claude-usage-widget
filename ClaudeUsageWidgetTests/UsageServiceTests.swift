@@ -20,7 +20,7 @@ final class UsageServiceTests: XCTestCase {
     override func setUp() {
         super.setUp()
         api = FakeClaudeAPI()
-        service = UsageService(client: api, orgId: "chat-org")
+        service = UsageService(source: WebSessionUsageSource(client: api, orgId: "chat-org"))
         spy = SpyDelegate()
         service.delegate = spy
     }
@@ -75,6 +75,17 @@ final class UsageServiceTests: XCTestCase {
         await service.fetchNow()
         XCTAssertEqual(spy.expiries, 0)
         XCTAssertEqual(spy.failures, [.forbidden("Permission denied.")])
+    }
+
+    func test_fetch_providerThrowsExpired_reportsExpiry() async {
+        let oauth = OAuthClient(session: StubURLProtocol.session())
+        let source = OAuthUsageSource(client: oauth, tokens: OwnTokenProvider(store: InMemoryTokenStore(), client: oauth), identity: .ownToken)
+        let service = UsageService(source: source)
+        let spy = SpyDelegate()
+        service.delegate = spy
+        await service.fetchNow()
+        XCTAssertEqual(spy.expiries, 1)
+        XCTAssertFalse(service.isPolling)
     }
 
     func test_stop_beforeStart_doesNotCrash() {

@@ -7,22 +7,21 @@ protocol UsageServiceDelegate: AnyObject {
     func usageServiceDidDetectSessionExpiry(_ service: UsageService)
 }
 
-/// Polls one org's usage every five minutes. Stops itself and reports when the session is gone.
+/// Polls the current identity's usage every five minutes. Stops itself and reports when the session is gone.
 @MainActor
 final class UsageService {
     weak var delegate: UsageServiceDelegate?
 
-    let orgId: String
     var pollInterval: TimeInterval = 300
     private(set) var lastData: UsageData?
     private(set) var isPolling = false
+    var identity: IdentitySource { source.identity }
 
-    private let client: ClaudeAPI
+    private let source: UsageSource
     private var timer: Timer?
 
-    init(client: ClaudeAPI, orgId: String) {
-        self.client = client
-        self.orgId = orgId
+    init(source: UsageSource) {
+        self.source = source
     }
 
     func start() {
@@ -47,7 +46,7 @@ final class UsageService {
 
     func fetchNow() async {
         do {
-            let response = try await client.get("/api/organizations/\(orgId)/usage")
+            let response = try await source.fetchUsage()
             if let error = ClaudeAPIError.classify(response) {
                 if error == .sessionExpired {
                     stop()
@@ -60,6 +59,9 @@ final class UsageService {
             let data = try UsageData.decode(from: response.body)
             lastData = data
             delegate?.usageService(self, didUpdate: data)
+        } catch ClaudeAPIError.sessionExpired {
+            stop()
+            delegate?.usageServiceDidDetectSessionExpiry(self)
         } catch let error as ClaudeAPIError {
             delegate?.usageService(self, didFailWith: error)
         } catch {
