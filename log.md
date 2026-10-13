@@ -2,6 +2,10 @@
 
 Newest entry on top.
 
+## 2026-10-12 20:03 PT
+
+v0.4.2 (branch `feat/popover-outside-click`). Rahul asked that a click anywhere outside the open popover put it back in the menu bar. Reproduced first on v0.4.1 by driving the real app through Accessibility: status item pressed, empty menu bar clicked, popover still open. Cause: `.transient` does not dismiss for an accessory app that is never active. Fix: `OutsideClickDismisser` with a global mouse-down monitor, armed while the popover is shown. 153 tests. Verified on the built 0.4.2 app the same way: closes on an outside click (twice in a row, so the monitor re-arms), stays open on a click inside, and the status item still closes it.
+
 ## 2026-10-12 19:49 PT
 
 v0.4.1 (merged to `main` and tagged `v0.4.1` the same evening; HQ-140). Rahul's first browser sign-in on v0.4.0 ended on claude.ai with "Authorization failed / Invalid request format". Findings: the authorize URL the app builds loads the consent screen in every encoding tried (the app's `%20` and unencoded `redirect_uri`, the spike's form encoding, and mixes), so the URL format is not it. The one semantic difference from the 2026-10-12 spike that worked is the `state` value: the app sent 16 random bytes (22 characters), the spike 32 characters. Changed `PKCE.randomState()` to 32 bytes (43 characters), test first. 146 tests. Confirmed by Rahul's retry on the 0.4.1 build: Authorize went through and the callback page rendered "Signed in to Claude Usage Widget. You can close this tab." v0.4.0's browser route is broken for everyone; its Claude Code route and in-app route are unaffected. Lesson: the spike proved the flow with a 32-character state and the app then shipped a shorter one that no test or manual pass exercised before the tag.

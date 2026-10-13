@@ -7,7 +7,7 @@ Native macOS menu bar app (Swift + AppKit) showing Claude.ai plan usage at a gla
 - **GitHub:** `HQ-RSL-A/claude-usage-widget`
 - **Distribution:** `.dmg` via GitHub Releases (GitHub Actions)
 - **Target:** macOS 13+ (Ventura and later)
-- **Current version:** v0.4.1
+- **Current version:** v0.4.2
 
 ## Stack
 
