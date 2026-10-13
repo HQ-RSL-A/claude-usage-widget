@@ -21,6 +21,12 @@ final class PKCETests: XCTestCase {
         let a = PKCE.randomState(), b = PKCE.randomState()
         XCTAssertNotEqual(a, b)
         XCTAssertFalse(a.contains("+") || a.contains("/") || a.contains("="))
-        XCTAssertGreaterThanOrEqual(a.count, 20)
+    }
+
+    /// Observed 2026-10-12: claude.ai's Authorize step answered "Invalid request format" when the app sent a
+    /// 22-character state (16 bytes), while a 32-character state was accepted. 32 bytes gives 43 characters,
+    /// the same size as the PKCE verifier.
+    func test_randomState_is43Characters() {
+        XCTAssertEqual(PKCE.randomState().count, 43)
     }
 }
