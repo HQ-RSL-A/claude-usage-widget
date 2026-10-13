@@ -21,6 +21,7 @@ claude-usage-widget/
     ClaudeAPIClient.swift       # Hidden WKWebView JS fetch bridge for the web session
     Organization.swift          # /api/organizations entry, chat-org picker (web session)
     Models.swift                # BucketKind, UsageBucket, ExtraUsage, UsageData (+ decode), RingColorState, RingMetricMode
+    OutsideClickDismisser.swift # Closes the popover on a click outside it (global mouse monitor)
     MenuView.swift              # Popover: rows from buckets, sign-in buttons per state, "Signed in as" subtitle, version footer
     LoginWindowController.swift # Embedded WKWebView login window (fallback); closes only when the API confirms the session
     RingView.swift              # Core Graphics ring (NSView subclass)
@@ -43,6 +44,7 @@ claude-usage-widget/
 - **Keychain denial remembered** - `claudeCodeTokenDenied` in UserDefaults, cleared only by "Use Claude Code's sign-in"; existence is probed with an attribute-only query that never prompts
 - **Web session kept one release** - the borrowed OAuth client id could be blocked; the embedded login still works
 - **JS bridge over URLSession for the web session** - claude.ai's bot protection tends to reject non-browser clients
+- **Outside click closes the popover** (v0.4.2) - `.transient` alone does not do it for a menu bar app, because the app is never active and AppKit never sees the dismissing click. `OutsideClickDismisser` arms a global mouse-down monitor in `popoverDidShow` and disarms it in `popoverDidClose`. Global monitors never see this app's own clicks, so the popover's controls and the status item behave as before
 - **Core Graphics ring**, **5-minute polling**, **main actor everywhere**, **`main.swift` detects XCTest**, **ring metric toggle in UserDefaults**, **version from `project.yml`** (unchanged since v0.3.0)
 
 ## Auth Flow (v0.4.0)
@@ -85,8 +87,9 @@ Ring shows session usage by default, configurable via popover toggle. Weekly mod
 
 ## Testing
 
-- `xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO` (146 tests as of v0.4.1); CI runs the same on every push to `main`
+- `xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO` (153 tests as of v0.4.2); CI runs the same on every push to `main`
 - `StubURLProtocol` answers OAuth requests; `FakeClaudeAPI` scripts web-session responses; `FakeCallbackServer`, `InMemoryTokenStore`, `FakeClaudeCodeCredentials` drive the coordinator; `CallbackServerTests` make real localhost requests; one Keychain round trip runs under `io.rsla.ClaudeUsageWidget.tests`
+- The popover can be driven for real through Accessibility: press the status item with `AXPress`, post a `CGEvent` click on an empty stretch of the menu bar, count the app's on-screen windows taller than the status item. That check failed on v0.4.1 and passes on v0.4.2
 - Manual pass before a release: Claude Code route, browser route with Google, cancel, forced refresh, upgrade path (plan Task 9)
 
 ## Distribution

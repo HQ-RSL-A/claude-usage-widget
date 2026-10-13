@@ -12,6 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var client: ClaudeAPIClient!
     private var authManager: AuthManager!
     private var usageService: UsageService?
+    private var outsideClick: OutsideClickDismisser!
     private var ringMetricMode: RingMetricMode = .saved
 
     // MARK: - App Lifecycle
@@ -77,6 +78,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover = NSPopover()
         popover.contentViewController = menuViewController
         popover.behavior = .transient
+        popover.delegate = self
+        outsideClick = OutsideClickDismisser(
+            isShown: { [weak self] in self?.popover.isShown ?? false },
+            close: { [weak self] in self?.popover.performClose(nil) }
+        )
     }
 
     // MARK: - Status Icon
@@ -121,6 +127,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func signOut() {
         stopUsageService()
         authManager.signOut()
+    }
+}
+
+// MARK: - NSPopoverDelegate
+
+extension AppDelegate: NSPopoverDelegate {
+    func popoverDidShow(_ notification: Notification) {
+        outsideClick.popoverDidShow()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        outsideClick.popoverDidClose()
     }
 }
 
