@@ -44,6 +44,40 @@ public enum RingMetricMode: String {
     }
 }
 
+// MARK: - MenuBarLayout
+
+/// Which rings the menu bar item shows. Replaces RingMetricMode (v0.2.0 to v0.4.2).
+public enum MenuBarLayout: String, CaseIterable {
+    case both
+    case session
+    case week
+
+    public static let userDefaultsKey = "menuBarShows"
+
+    /// Keys earlier versions wrote. Not migrated: the old ring mode would hide the new two-ring layout.
+    static let legacyKeys = ["ringMetricMode"]
+
+    public static func load(from defaults: UserDefaults) -> MenuBarLayout {
+        defaults.string(forKey: userDefaultsKey).flatMap(MenuBarLayout.init(rawValue:)) ?? .both
+    }
+
+    public func save(to defaults: UserDefaults) {
+        defaults.set(rawValue, forKey: Self.userDefaultsKey)
+    }
+
+    public static func removeLegacyKeys(from defaults: UserDefaults) {
+        legacyKeys.forEach { defaults.removeObject(forKey: $0) }
+    }
+
+    public var menuTitle: String {
+        switch self {
+        case .both: return "Session and Week"
+        case .session: return "Session Only"
+        case .week: return "Week Only"
+        }
+    }
+}
+
 // MARK: - BucketKind
 
 /// The usage buckets the widget knows how to show, in display order. Raw values are the API keys.
@@ -55,7 +89,7 @@ public enum BucketKind: String, CaseIterable {
 
     public var label: String {
         switch self {
-        case .session: return "Current Session"
+        case .session: return "Current session"
         case .weeklyAll: return "Weekly (all models)"
         case .weeklyOpus: return "Weekly (Opus)"
         case .weeklySonnet: return "Weekly (Sonnet)"
@@ -101,6 +135,14 @@ public struct UsageBucket: Equatable {
         .from(percent: percentUsed)
     }
 
+    /// What's left, as a whole percent. 100 minus the rounded used percent, so it always adds up
+    /// to 100 with the "% used" claude.ai shows.
+    public var percentLeft: Int {
+        max(0, min(100, 100 - Int((percentUsed * 100).rounded())))
+    }
+
+    public var isAtLimit: Bool { percentLeft == 0 }
+
     /// "Fri 9:00 AM"; nil if resetsAt is nil
     public var resetsAtDisplay: String? {
         guard let date = resetsAt else { return nil }
@@ -138,6 +180,21 @@ public struct UsageData {
 
     public func bucket(_ kind: BucketKind) -> UsageBucket? {
         buckets.first { $0.kind == kind }
+    }
+
+    public var sessionBucket: UsageBucket? { bucket(.session) }
+
+    /// The weekly limit closest to running out; on a tie, the first in BucketKind order.
+    public var weekBucket: UsageBucket? {
+        buckets.filter(\.kind.isWeekly).reduce(nil) { best, next in
+            guard let best else { return next }
+            return next.percentUsed > best.percentUsed ? next : best
+        }
+    }
+
+    /// The earliest reset still ahead of `now`.
+    public func nextReset(after now: Date) -> Date? {
+        buckets.compactMap(\.resetsAt).filter { $0 > now }.min()
     }
 
     /// Ring value for a metric mode; 0 when the account has no such bucket.

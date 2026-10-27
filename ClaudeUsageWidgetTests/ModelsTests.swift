@@ -77,8 +77,74 @@ final class ModelsTests: XCTestCase {
         XCTAssertNil(bucket(.weeklyAll, 0.2, resetsAt: nil).resetsAtDisplay)
     }
 
+    // MARK: - What's left
+
+    func test_percentLeft_isHundredMinusRoundedUsed() {
+        XCTAssertEqual(bucket(.session, 0.12).percentLeft, 88)
+        XCTAssertEqual(bucket(.session, 0.125).percentLeft, 87)
+        XCTAssertEqual(bucket(.session, 0.0).percentLeft, 100)
+        XCTAssertEqual(bucket(.session, 1.0).percentLeft, 0)
+        XCTAssertEqual(bucket(.session, 1.3).percentLeft, 0)
+        XCTAssertEqual(bucket(.session, -0.1).percentLeft, 100)
+    }
+
+    func test_isAtLimit_whenNothingIsLeft() {
+        XCTAssertTrue(bucket(.session, 0.996).isAtLimit)
+        XCTAssertFalse(bucket(.session, 0.99).isAtLimit)
+    }
+
+    func test_weekBucket_isTheWeeklyLimitClosestToRunningOut() {
+        let mixed = UsageData(buckets: [bucket(.session, 0.9), bucket(.weeklyAll, 0.67), bucket(.weeklyOpus, 0.80), bucket(.weeklySonnet, 0.23)], extraUsage: nil)
+        XCTAssertEqual(mixed.weekBucket?.kind, .weeklyOpus)
+        XCTAssertEqual(mixed.sessionBucket?.kind, .session)
+        let tie = UsageData(buckets: [bucket(.weeklyAll, 0.5), bucket(.weeklySonnet, 0.5)], extraUsage: nil)
+        XCTAssertEqual(tie.weekBucket?.kind, .weeklyAll)
+        XCTAssertNil(UsageData(buckets: [bucket(.session, 0.5)], extraUsage: nil).weekBucket)
+    }
+
+    func test_nextReset_isTheEarliestFutureReset() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let data = UsageData(buckets: [
+            bucket(.session, 0.1, resetsAt: now.addingTimeInterval(-60)),
+            bucket(.weeklyAll, 0.1, resetsAt: now.addingTimeInterval(4 * 86400)),
+            bucket(.weeklyOpus, 0.1, resetsAt: now.addingTimeInterval(3 * 3600)),
+            bucket(.weeklySonnet, 0.1, resetsAt: nil),
+        ], extraUsage: nil)
+        XCTAssertEqual(data.nextReset(after: now), now.addingTimeInterval(3 * 3600))
+        XCTAssertNil(data.nextReset(after: now.addingTimeInterval(5 * 86400)))
+    }
+
+    // MARK: - Menu bar layout preference
+
+    private func freshDefaults() -> UserDefaults {
+        let name = "io.rsla.ClaudeUsageWidget.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        return defaults
+    }
+
+    func test_menuBarLayout_defaultsToBoth_andRoundTrips() {
+        let defaults = freshDefaults()
+        XCTAssertEqual(MenuBarLayout.load(from: defaults), .both)
+        MenuBarLayout.week.save(to: defaults)
+        XCTAssertEqual(MenuBarLayout.load(from: defaults), .week)
+        defaults.set("sideways", forKey: MenuBarLayout.userDefaultsKey)
+        XCTAssertEqual(MenuBarLayout.load(from: defaults), .both)
+        XCTAssertEqual(MenuBarLayout.userDefaultsKey, "menuBarShows")
+        XCTAssertEqual(MenuBarLayout.allCases.map(\.menuTitle), ["Session and Week", "Session Only", "Week Only"])
+    }
+
+    func test_menuBarLayout_removeLegacyKeys_deletesRingMetricMode() {
+        let defaults = freshDefaults()
+        defaults.set("weekly", forKey: "ringMetricMode")
+        MenuBarLayout.week.save(to: defaults)
+        MenuBarLayout.removeLegacyKeys(from: defaults)
+        XCTAssertNil(defaults.object(forKey: "ringMetricMode"))
+        XCTAssertEqual(MenuBarLayout.load(from: defaults), .week)
+    }
+
     func test_bucketKind_labelsAndWeeklyFlag() {
-        XCTAssertEqual(BucketKind.session.label, "Current Session")
+        XCTAssertEqual(BucketKind.session.label, "Current session")
         XCTAssertEqual(BucketKind.weeklyAll.label, "Weekly (all models)")
         XCTAssertEqual(BucketKind.weeklyOpus.label, "Weekly (Opus)")
         XCTAssertEqual(BucketKind.weeklySonnet.label, "Weekly (Sonnet)")
