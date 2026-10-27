@@ -137,8 +137,10 @@ public struct UsageBucket: Equatable {
 
     /// What's left, as a whole percent. 100 minus the rounded used percent, so it always adds up
     /// to 100 with the "% used" claude.ai shows.
-    public var percentLeft: Int {
-        max(0, min(100, 100 - Int((percentUsed * 100).rounded())))
+    public var percentLeft: Int { Self.percentLeft(forUsed: percentUsed) }
+
+    public static func percentLeft(forUsed used: Double) -> Int {
+        max(0, min(100, 100 - Int((used * 100).rounded())))
     }
 
     public var isAtLimit: Bool { percentLeft == 0 }

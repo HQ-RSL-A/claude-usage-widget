@@ -65,16 +65,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menuViewController.onUseClaudeCode = { [weak self] in Task { await self?.authManager.useClaudeCodeToken() } }
         menuViewController.onSignInInsideApp = { [weak self] in self?.authManager.signInInsideApp() }
         menuViewController.onCancelSignIn = { [weak self] in self?.authManager.cancelBrowserSignIn() }
-        menuViewController.onToggleMode = { [weak self] mode in
-            guard let self = self else { return }
-            self.ringMetricMode = mode
-            if let data = self.usageService?.lastData {
-                let progress = data.ringValue(for: mode)
-                let colorState = data.ringColorState(for: mode)
-                self.updateStatusIcon(progress: progress, colorState: colorState)
-            }
-        }
-
         popover = NSPopover()
         popover.contentViewController = menuViewController
         popover.behavior = .transient
