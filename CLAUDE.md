@@ -31,6 +31,7 @@ Native macOS menu bar app (Swift + AppKit) showing Claude.ai plan usage at a gla
 - **Never use Claude Code's refresh token.** Read its access token, nothing else; refreshing it would break Claude Code
 - **Tokens live in the Keychain or memory**, never UserDefaults, logs or files. Tests touch only `io.rsla.ClaudeUsageWidget.tests*` Keychain services
 - **Menu bar item: no motion, and its width depends only on the layout, never on the numbers.** Digits and tracks always use the menu bar's own color; only the arcs turn amber or red (Rahul, 2026-10-26: colored digits get lost on colored wallpapers)
+- **GitHub keeps only the latest release.** When a new release is out, delete the previous release, its DMG and its tag without asking (Rahul, 2026-10-27). Commit history stays; record the old tag's commit in `log.md`
 - **Never tag a release before the built app has been driven through the changed flow.** v0.4.0 was tagged before its manual pass and shipped a broken browser sign-in; green unit tests and a consent page that loads did not catch it. `brain.md` Testing says how to drive the popover for real
 
 ## Commands
