@@ -94,7 +94,7 @@ Layouts: Session and Week (default, 43 x 20 pt image), Session Only or Week Only
 
 ## Testing
 
-- `xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO` (196 tests as of v0.5.0); CI runs the same on every push to `main`. The version tests pin `MARKETING_VERSION`: bump them with `project.yml`
+- `xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO` (199 tests as of v0.5.0); CI runs the same on every push to `main`. The version tests pin `MARKETING_VERSION`: bump them with `project.yml`
 - **Preview mode:** `open -n ClaudeUsageWidget.app --args -previewUsage amber` (also `normal`, `critical`, `limit`, `stale`, `signedOut`) shows made-up numbers in the real menu bar with no sign-in, Keychain or WebKit, so a fresh build raises no Keychain prompt. It shares the installed app's preferences (`menuBarShows`), so quit the installed copy first and reopen it after
 - System Events reads the item: `help` is the tooltip, `description` the VoiceOver label; while open, the popover is an `AXPopover` child of the menu bar item
 - `StubURLProtocol` answers OAuth requests; `FakeClaudeAPI` scripts web-session responses; `FakeCallbackServer`, `InMemoryTokenStore`, `FakeClaudeCodeCredentials` drive the coordinator; `CallbackServerTests` make real localhost requests; one Keychain round trip runs under `io.rsla.ClaudeUsageWidget.tests`

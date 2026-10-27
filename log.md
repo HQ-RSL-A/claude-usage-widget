@@ -2,6 +2,12 @@
 
 Newest entry on top.
 
+## 2026-10-27 00:32 PT
+
+v0.5.0 released: https://github.com/HQ-RSL-A/claude-usage-widget/releases/tag/v0.5.0 (merge `6f8a8b6`, tag `v0.5.0`; CI tests and the DMG build green; DMG 472,599 bytes). Rahul said "merge to main and deploy and make sure my mac app is up to date". Before the tag: the Release build from `main` (CI's signing flags) replaced v0.4.2 in `/Applications`, Rahul allowed the Keychain prompt for Claude Code's sign-in, and the menu bar showed his real numbers (67 and 20 left, tooltip with both reset times); he ticked Open at Login on it (no beep, no Settings pane, so macOS accepted it). The released DMG was downloaded, checked (0.5.0, icon present, ad-hoc linker signature) and opened in preview mode beside the installed app, then closed. His installed copy is the local build of the tagged commit, kept to avoid a second Keychain prompt. HQ-114 and HQ-119 closed; HQ-143 renamed to v0.6.0; the review's deferred minors are a comment on HQ-142. The v0.4.2 release is still on GitHub: ask Rahul before deleting it.
+
+Lesson: `sfltool dumpbtm` now asks for admin (Touch ID) on every run. A 5-second polling loop put that dialog on Rahul's screen repeatedly; the shared memory note was corrected.
+
 ## 2026-10-27 00:00 PT
 
 v0.5.0 on branch `feat/menu-bar-numbers`, not merged, not tagged. Rahul's ask: show what's left of the session and the week in the menu bar without opening the popover ("it can rotate between those two numbers, or something better"), plus other UI fixes. He chose numbers that count down (what's left) with bars and rings that still fill with use, and mid-build asked for white digits because colored ones get lost on colored wallpapers.
@@ -12,7 +18,7 @@ Checked on the real menu bar with a Release build made with CI's signing flags: 
 
 Final whole-branch review (fresh reviewer): no Critical. Fixed with tests first: the refresh spinner kept spinning after a session expiry or a sign-out mid-fetch; "100" touched the ring (now 6.8 pt, slightly tighter); a huge utilization would crash the whole-number conversion (clamped first); release notes in `build.yml` described the old ring. 199 tests. Deferred minors: the wake fetch can race the network (numbers stay old until the next poll); refresh while unreachable has no spinner or guard (older behavior); a failing first fetch leaves the tooltip saying "updating"; half-point utilizations (14.5, 28.5, 56.5, 57.5) round one point off; preview mode also reads a persisted `previewUsage` default. Unverified: digit color on a light menu bar (follows `effectiveAppearance`, pixel-tested both ways, seen only on a dark one).
 
-Before the tag (Rahul): one run of the build on real numbers (Claude Code route, one Keychain prompt), Open at Login ticked and unticked once (`sfltool dumpbtm` shows the record), then merge, push and tag `v0.5.0`. Ask before deleting the v0.4.2 release.
+Before the tag: done, see the entry above.
 
 ## 2026-10-12 20:45 PT
 
