@@ -69,11 +69,11 @@ enum StatusIcon {
 
         case .usage(let left, let used, let state):
             let alpha: CGFloat = dimmed ? dimmedAlpha : 1
-            let base = color(for: state, foreground: foreground)
-            let ringColor = base.withAlphaComponent(alpha)
-            strokeCircle(at: center, color: base.withAlphaComponent(alpha * trackAlpha))
-            strokeArc(at: center, fraction: used, color: ringColor)
-            drawNumber(left, at: center, color: ringColor)
+            // Readable on any wallpaper: the number and the track keep the menu bar's own color,
+            // and only the arc turns amber or red.
+            strokeCircle(at: center, color: foreground.withAlphaComponent(alpha * trackAlpha))
+            strokeArc(at: center, fraction: used, color: color(for: state, foreground: foreground).withAlphaComponent(alpha))
+            drawNumber(left, at: center, color: foreground.withAlphaComponent(alpha))
         }
     }
 
