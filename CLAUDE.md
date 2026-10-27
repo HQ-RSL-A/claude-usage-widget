@@ -30,6 +30,7 @@ Native macOS menu bar app (Swift + AppKit) showing Claude.ai plan usage at a gla
 - **OAuth `state` is 32 random bytes (43 characters).** A 16-byte state loads the consent page but is refused at Authorize with "Invalid request format" (v0.4.0 bug). A URL that loads the consent page proves nothing about the Authorize step
 - **Never use Claude Code's refresh token.** Read its access token, nothing else; refreshing it would break Claude Code
 - **Tokens live in the Keychain or memory**, never UserDefaults, logs or files. Tests touch only `io.rsla.ClaudeUsageWidget.tests*` Keychain services
+- **Never tag a release before the built app has been driven through the changed flow.** v0.4.0 was tagged before its manual pass and shipped a broken browser sign-in; green unit tests and a consent page that loads did not catch it. `brain.md` Testing says how to drive the popover for real
 
 ## Commands
 
@@ -38,6 +39,7 @@ open ClaudeUsageWidget.xcodeproj     # Open in Xcode
 xcodegen generate                     # Regenerate project from project.yml
 swift makeIcon.swift                  # Regenerate app icon PNGs
 xcodebuild -scheme ClaudeUsageWidget -configuration Release  # CLI build
+xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO  # Unit tests
 ```
 
 ## Known Issues
@@ -46,6 +48,6 @@ xcodebuild -scheme ClaudeUsageWidget -configuration Release  # CLI build
 - `ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon` must be set in `project.yml` target settings
 - Finder caches old app icons - `killall Dock` to refresh
 - Downloaded DMG triggers Gatekeeper error - users must run `sudo xattr -cr /Applications/ClaudeUsageWidget.app`
-- Google OAuth may fail in unsigned WKWebView apps - workaround: add email/password to Claude account
+- Google sign-in fails inside the embedded login window (unsigned WKWebView). Use **Sign in with your browser**, where it works
 
 See `brain.md` for architecture details, auth flow, API shape, and ring color states.

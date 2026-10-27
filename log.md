@@ -2,6 +2,17 @@
 
 Newest entry on top.
 
+## 2026-10-12 20:45 PT
+
+Session wrap. State: `main` is at v0.4.2 and GitHub has one branch, one tag and one release. Since the entry below: Rahul asked for the widget's saved data to be wiped from his Mac too, so its Keychain item `io.rsla.ClaudeUsageWidget`, its WebKit, HTTP storage, cache and temp folders and its preferences were deleted (Claude Code's own Keychain item was not touched). He then installed v0.4.2 from the released DMG on that clean Mac and reported "Looking good. Works so far!". Which of the five checks he ran is not recorded.
+
+Next steps for whoever picks this up cold:
+- Open follow-ups are Linear issues, not this file. HQ-142: the review notes deferred from v0.3.0 and v0.4.0, and what has never been verified on a real Free or Pro account or on macOS 13. HQ-143: v0.5.0, remove the embedded login once the browser route has proven itself. Older backlog: HQ-114 launch at login, HQ-118 usage notification, HQ-119 tooltip. Rahul's call: HQ-116 Apple Developer Program.
+- GitHub was cut down to the latest release at Rahul's request on 2026-10-12. Whether that is a standing policy was not asked. Before deleting the previous release when the next one ships, ask him.
+- Drive the built app through the changed flow before tagging (now a rule in `CLAUDE.md`).
+- No built copy of the app is kept anywhere on this Mac outside `/Applications`. Build with `xcodegen generate`, then `xcodebuild`. Xcode 27 and xcodegen have been on this Mac since 2026-10-12.
+- The working ledgers of both plans were deleted with their workspaces. The specs and plans in `docs/plans/`, this log and Linear are the record.
+
 ## 2026-10-12 20:07 PT
 
 v0.4.2 released and everything older removed, at Rahul's request ("only the latest one is there, and no old version exists"). Release: https://github.com/HQ-RSL-A/claude-usage-widget/releases/tag/v0.4.2 (merge `b21133b`, 153 tests green locally and on CI, DMG attached). Then deleted from GitHub: releases v0.1.1, v0.1.2, v0.2.1, v0.3.0, v0.4.0, v0.4.1 with their DMGs, tags v0.1.0 through v0.4.1, and the merged leftover branch `v0.3.0-sign-in-for-anyone`. GitHub now has one branch (`main`), one tag and one release (`v0.4.2`). Commit history is untouched; the commits the old tags pointed at, should one ever be needed again: v0.1.0 `370ce1b39e22`, v0.1.1 `7a9ee1f6a895`, v0.1.2 `42f07e9eddb3`, v0.2.1 `9894900eff2f`, v0.3.0 `e3ae2503c4a7`, v0.4.0 `7c0e5ede7f23`, v0.4.1 `20a6a086e926`. Also deleted every copy of the app on Rahul's Mac: the running build and the repo's `build/` folder, a v0.3.0 app and the v0.3.0 and v0.4.0 DMGs sitting in the Trash, and the session's build folders. A Spotlight and file sweep found none left. Not deleted: the widget's saved data (Keychain item `io.rsla.ClaudeUsageWidget`, WebKit and cache folders), so a fresh install of v0.4.2 comes up signed in.
