@@ -18,63 +18,12 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(RingColorState.from(percent: 1.0), .critical)
     }
 
-    func test_ringMetricMode_defaultIsSession() {
-        XCTAssertEqual(RingMetricMode.default, .session)
-    }
-
-    // MARK: - Ring value per mode
-
-    func test_ringValue_sessionMode_returnsSessionPercent() {
-        let data = UsageData(buckets: [bucket(.session, 0.42), bucket(.weeklyAll, 0.67), bucket(.weeklySonnet, 0.23)], extraUsage: nil)
-        XCTAssertEqual(data.ringValue(for: .session), 0.42, accuracy: 0.001)
-    }
-
-    func test_ringValue_weeklyMode_returnsMaxWeekly() {
-        let data = UsageData(buckets: [bucket(.session, 0.42), bucket(.weeklyAll, 0.67), bucket(.weeklyOpus, 0.80), bucket(.weeklySonnet, 0.23)], extraUsage: nil)
-        XCTAssertEqual(data.ringValue(for: .weekly), 0.80, accuracy: 0.001)
-    }
-
-    func test_ringValue_missingBuckets_isZero() {
-        let weeklyOnly = UsageData(buckets: [bucket(.weeklyAll, 0.5)], extraUsage: nil)
-        XCTAssertEqual(weeklyOnly.ringValue(for: .session), 0.0, accuracy: 0.001)
-        let sessionOnly = UsageData(buckets: [bucket(.session, 0.5)], extraUsage: nil)
-        XCTAssertEqual(sessionOnly.ringValue(for: .weekly), 0.0, accuracy: 0.001)
-        XCTAssertEqual(UsageData(buckets: [], extraUsage: nil).ringValue(for: .session), 0.0, accuracy: 0.001)
-    }
-
-    func test_ringColorState_forMode() {
-        let data = UsageData(buckets: [bucket(.session, 0.42), bucket(.weeklyAll, 0.67)], extraUsage: nil)
-        XCTAssertEqual(data.ringColorState(for: .session), .normal)
-        XCTAssertEqual(data.ringColorState(for: .weekly), .amber)
-    }
-
     // MARK: - Bucket display
 
     func test_barColorState_perBucket() {
         XCTAssertEqual(bucket(.session, 0.42).barColorState, .normal)
         XCTAssertEqual(bucket(.session, 0.67).barColorState, .amber)
         XCTAssertEqual(bucket(.session, 0.90).barColorState, .critical)
-    }
-
-    func test_resetsInDisplay_future_showsCountdown() {
-        let display = bucket(.session, 0.5, resetsAt: Date().addingTimeInterval(2520)).resetsInDisplay
-        XCTAssertTrue(display.hasPrefix("resets in"), display)
-        XCTAssertTrue(display.contains("m"), display)
-    }
-
-    func test_resetsInDisplay_pastDate_showsPlaceholder() {
-        XCTAssertEqual(bucket(.session, 0.5, resetsAt: Date().addingTimeInterval(-60)).resetsInDisplay, "–")
-        XCTAssertEqual(bucket(.session, 0.5, resetsAt: nil).resetsInDisplay, "–")
-    }
-
-    func test_resetsAtDisplay_formatsClockTime() {
-        var comps = DateComponents()
-        comps.weekday = 6
-        comps.hour = 9
-        comps.minute = 0
-        let date = Calendar.current.nextDate(after: Date(), matching: comps, matchingPolicy: .nextTime)!
-        XCTAssertTrue(bucket(.weeklyAll, 0.2, resetsAt: date).resetsAtDisplay?.contains("9:00") == true)
-        XCTAssertNil(bucket(.weeklyAll, 0.2, resetsAt: nil).resetsAtDisplay)
     }
 
     // MARK: - What's left
@@ -181,7 +130,7 @@ final class ModelsTests: XCTestCase {
     func test_decode_nullSession_keepsWeekly() throws {
         let data = try UsageData.decode(from: Data(Fixtures.usageNoSessionJSON.utf8))
         XCTAssertEqual(data.buckets.map(\.kind), [.weeklyAll])
-        XCTAssertEqual(data.ringValue(for: .session), 0.0, accuracy: 0.001)
+        XCTAssertNil(data.sessionBucket)
     }
 
     func test_decode_skipsBucketWithNullUtilization() throws {

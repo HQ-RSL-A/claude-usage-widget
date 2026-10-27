@@ -3,9 +3,9 @@ import Foundation
 // MARK: - RingColorState
 
 public enum RingColorState: Equatable {
-    case normal    // 0–59%
-    case amber     // 60–84%
-    case critical  // 85–100%
+    case normal    // under 60% used
+    case amber     // 60 to 84% used
+    case critical  // 85% used and up
 
     public static func from(percent: Double) -> RingColorState {
         switch percent {
@@ -19,34 +19,9 @@ public enum RingColorState: Equatable {
     }
 }
 
-// MARK: - RingMetricMode
-
-public enum RingMetricMode: String {
-    case session
-    case weekly
-
-    public static let `default`: RingMetricMode = .session
-
-    /// UserDefaults key for persisting the preference
-    public static let userDefaultsKey = "ringMetricMode"
-
-    /// Read the saved preference, falling back to default
-    public static var saved: RingMetricMode {
-        guard let raw = UserDefaults.standard.string(forKey: userDefaultsKey) else {
-            return .default
-        }
-        return RingMetricMode(rawValue: raw) ?? .default
-    }
-
-    /// Save the preference to UserDefaults
-    public func save() {
-        UserDefaults.standard.set(rawValue, forKey: Self.userDefaultsKey)
-    }
-}
-
 // MARK: - MenuBarLayout
 
-/// Which rings the menu bar item shows. Replaces RingMetricMode (v0.2.0 to v0.4.2).
+/// Which rings the menu bar item shows. Replaced the one-ring Session/Weekly toggle (`ringMetricMode`, v0.2.0 to v0.4.2).
 public enum MenuBarLayout: String, CaseIterable {
     case both
     case session
@@ -114,23 +89,6 @@ public struct UsageBucket: Equatable {
         self.lockedReason = lockedReason
     }
 
-    /// "resets in 42m" or "resets in 1h 12m"; "–" if nil or past
-    public var resetsInDisplay: String {
-        guard let date = resetsAt else { return "–" }
-        let remaining = date.timeIntervalSinceNow
-        guard remaining > 0 else { return "–" }
-
-        let totalMinutes = Int(remaining / 60)
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-
-        if hours > 0 {
-            return "resets in \(hours)h \(minutes)m"
-        } else {
-            return "resets in \(minutes)m"
-        }
-    }
-
     public var barColorState: RingColorState {
         .from(percent: percentUsed)
     }
@@ -144,14 +102,6 @@ public struct UsageBucket: Equatable {
     }
 
     public var isAtLimit: Bool { percentLeft == 0 }
-
-    /// "Fri 9:00 AM"; nil if resetsAt is nil
-    public var resetsAtDisplay: String? {
-        guard let date = resetsAt else { return nil }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE h:mm a"
-        return formatter.string(from: date)
-    }
 }
 
 // MARK: - ExtraUsage
@@ -197,20 +147,6 @@ public struct UsageData {
     /// The earliest reset still ahead of `now`.
     public func nextReset(after now: Date) -> Date? {
         buckets.compactMap(\.resetsAt).filter { $0 > now }.min()
-    }
-
-    /// Ring value for a metric mode; 0 when the account has no such bucket.
-    public func ringValue(for mode: RingMetricMode) -> Double {
-        switch mode {
-        case .session:
-            return bucket(.session)?.percentUsed ?? 0.0
-        case .weekly:
-            return buckets.filter { $0.kind.isWeekly }.map(\.percentUsed).max() ?? 0.0
-        }
-    }
-
-    public func ringColorState(for mode: RingMetricMode) -> RingColorState {
-        .from(percent: ringValue(for: mode))
     }
 }
 
