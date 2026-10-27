@@ -3,7 +3,7 @@ import AppKit
 // MARK: - ProgressBarView
 
 /// Custom thin progress bar drawn with Core Graphics. 4pt tall, 2pt corner radius.
-/// Color adapts based on usage threshold (normal/amber/critical).
+/// The filled part is what's used; color adapts to the usage threshold (normal/amber/critical).
 class ProgressBarView: NSView {
 
     var progress: Double = 0.0 {
@@ -20,14 +20,7 @@ class ProgressBarView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let trackColor = NSColor.separatorColor
-        let fillColor: NSColor = {
-            switch colorState {
-            case .normal: return .labelColor
-            case .amber: return NSColor(red: 245/255, green: 158/255, blue: 11/255, alpha: 1)
-            case .critical: return NSColor(red: 239/255, green: 68/255, blue: 68/255, alpha: 1)
-            }
-        }()
-
+        let fillColor = StatusIcon.color(for: colorState, foreground: .labelColor)
         let radius: CGFloat = 2.0
 
         // Track
@@ -53,18 +46,21 @@ class UsageRowView: NSView {
     private let nameLabel: NSTextField
     private let progressBar: ProgressBarView
     private let percentLabel: NSTextField
-    private let resetLabel: NSTextField
+    private let detailLabel: NSTextField
 
     init(label: String) {
         nameLabel = NSTextField(labelWithString: label)
         progressBar = ProgressBarView()
-        percentLabel = NSTextField(labelWithString: "—%")
-        resetLabel = NSTextField(labelWithString: "—")
+        percentLabel = NSTextField(labelWithString: "")
+        detailLabel = NSTextField(labelWithString: "")
         super.init(frame: .zero)
         setupUI()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) not implemented") }
+
+    var percentText: String { percentLabel.stringValue }
+    var detailText: String { detailLabel.stringValue }
 
     private func setupUI() {
         nameLabel.font = .systemFont(ofSize: 11, weight: .medium)
@@ -78,9 +74,9 @@ class UsageRowView: NSView {
         percentLabel.alignment = .right
         percentLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        resetLabel.font = .systemFont(ofSize: 10, weight: .regular)
-        resetLabel.textColor = .tertiaryLabelColor
-        resetLabel.translatesAutoresizingMaskIntoConstraints = false
+        detailLabel.font = .systemFont(ofSize: 10, weight: .regular)
+        detailLabel.textColor = .tertiaryLabelColor
+        detailLabel.translatesAutoresizingMaskIntoConstraints = false
 
         // Top row: name + percent
         let topRow = NSStackView(views: [nameLabel, percentLabel])
@@ -89,8 +85,8 @@ class UsageRowView: NSView {
         topRow.distribution = .fill
         topRow.translatesAutoresizingMaskIntoConstraints = false
 
-        // Main stack: top row, progress bar, reset label
-        let stack = NSStackView(views: [topRow, progressBar, resetLabel])
+        // Main stack: top row, progress bar, detail (hidden when empty)
+        let stack = NSStackView(views: [topRow, progressBar, detailLabel])
         stack.orientation = .vertical
         stack.spacing = 3
         stack.alignment = .leading
@@ -109,16 +105,17 @@ class UsageRowView: NSView {
         ])
     }
 
-    func update(percent: Double, colorState: RingColorState, detail: String) {
-        progressBar.progress = percent
+    /// `percentText` says what's left; the bar fills with what's used, so its empty part is what's left.
+    func update(percentText: String, used: Double, colorState: RingColorState, detail: String) {
+        progressBar.progress = used
         progressBar.colorState = colorState
-        percentLabel.stringValue = String(format: "%.0f%%", percent * 100)
-        resetLabel.stringValue = detail
+        percentLabel.stringValue = percentText
+        setDetail(detail)
     }
 
-    func update(bucket: UsageBucket) {
-        let detail = bucket.kind.isWeekly ? (bucket.resetsAtDisplay ?? "—") : bucket.resetsInDisplay
-        update(percent: bucket.percentUsed, colorState: bucket.barColorState, detail: detail)
+    func setDetail(_ detail: String) {
+        detailLabel.stringValue = detail
+        detailLabel.isHidden = detail.isEmpty
     }
 }
 
@@ -133,7 +130,15 @@ class MenuViewController: NSViewController {
     var onUseClaudeCode: (() -> Void)?
     var onSignInInsideApp: (() -> Void)?
     var onCancelSignIn: (() -> Void)?
-    var onToggleMode: ((RingMetricMode) -> Void)?
+    var onChangeLayout: ((MenuBarLayout) -> Void)?
+    var onToggleOpenAtLogin: (() -> Void)?
+
+    // Read each time the settings menu opens
+    var currentLayout: () -> MenuBarLayout = { .both }
+    var isOpenAtLoginEnabled: () -> Bool = { false }
+
+    /// Plain words for the current moment; tests swap in a fixed clock.
+    var makeText: () -> UsageText = { UsageText() }
 
     /// Shown under the empty-state title until the next sign-in attempt.
     var signInMessage: String?
@@ -147,6 +152,12 @@ class MenuViewController: NSViewController {
     // MARK: - State
 
     private var state: AuthState = .unknown
+    private var lastData: UsageData?
+    private var isFetching = false
+    private var failure: String?
+    /// Rows whose reset text moves with the clock.
+    private var bucketRows: [(row: UsageRowView, bucket: UsageBucket)] = []
+    private var clockTimer: Timer?
 
     // MARK: - UI Elements
 
@@ -154,10 +165,11 @@ class MenuViewController: NSViewController {
     private let subtitleLabel = NSTextField(labelWithString: "")
     private let emptyTitleLabel = NSTextField(labelWithString: "Not signed in")
     private let emptySubtitleLabel = NSTextField(labelWithString: "Sign in to see your usage")
-    private let refreshButton = RefreshButton(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
-    private let segmentedControl = NSSegmentedControl()
+    private let refreshButton = MenuViewController.iconButton(symbol: "arrow.clockwise", label: "Refresh")
+    private let spinner = NSProgressIndicator()
+    private let settingsButton = MenuViewController.iconButton(symbol: "gearshape", label: "Settings")
     private let rowsStack = NSStackView()
-    private let lastUpdatedLabel = NSTextField(labelWithString: "Last updated: —")
+    private let statusLabel = NSTextField(wrappingLabelWithString: "")
     private let authButton = NSButton(title: "Sign Out", target: nil, action: nil)
     private let quitButton = NSButton(title: "Quit", target: nil, action: nil)
     private let separator = NSBox()
@@ -185,13 +197,27 @@ class MenuViewController: NSViewController {
 
     // MARK: - Setup
 
+    private static func iconButton(symbol: String, label: String) -> NSButton {
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label) ?? NSImage()
+        let button = NSButton(image: image, target: nil, action: nil)
+        button.isBordered = false
+        button.imagePosition = .imageOnly
+        button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+        button.contentTintColor = .secondaryLabelColor
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        return button
+    }
+
     private func setupUI() {
         // Title
         titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         titleLabel.textColor = .labelColor
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        // Subtitle (org name, only when the account has more than one chat org)
+        // Subtitle ("Signed in as ...")
         subtitleLabel.font = .systemFont(ofSize: 10, weight: .regular)
         subtitleLabel.textColor = .tertiaryLabelColor
         subtitleLabel.isHidden = true
@@ -203,29 +229,30 @@ class MenuViewController: NSViewController {
         titleStack.spacing = 1
         titleStack.translatesAutoresizingMaskIntoConstraints = false
 
-        // Refresh button
-        refreshButton.onRefresh = { [weak self] in self?.onRefresh?() }
-        refreshButton.translatesAutoresizingMaskIntoConstraints = false
-        refreshButton.setContentHuggingPriority(.required, for: .horizontal)
+        // Refresh, its spinner while a fetch runs, and settings
+        refreshButton.target = self
+        refreshButton.action = #selector(refreshTapped)
+        settingsButton.target = self
+        settingsButton.action = #selector(settingsTapped(_:))
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isDisplayedWhenStopped = false
+        spinner.isHidden = true
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+
+        let controls = NSStackView(views: [spinner, refreshButton, settingsButton])
+        controls.orientation = .horizontal
+        controls.alignment = .centerY
+        controls.spacing = 10
+        controls.translatesAutoresizingMaskIntoConstraints = false
+        controls.setContentHuggingPriority(.required, for: .horizontal)
 
         // Header row
-        let headerRow = NSStackView(views: [titleStack, refreshButton])
+        let headerRow = NSStackView(views: [titleStack, controls])
         headerRow.orientation = .horizontal
         headerRow.alignment = .centerY
         headerRow.distribution = .fill
         headerRow.translatesAutoresizingMaskIntoConstraints = false
-
-        // Segmented control
-        segmentedControl.segmentCount = 2
-        segmentedControl.setLabel("Session", forSegment: 0)
-        segmentedControl.setLabel("Weekly", forSegment: 1)
-        segmentedControl.segmentStyle = .rounded
-        segmentedControl.selectedSegment = (RingMetricMode.saved == .session) ? 0 : 1
-        segmentedControl.target = self
-        segmentedControl.action = #selector(segmentChanged)
-        segmentedControl.translatesAutoresizingMaskIntoConstraints = false
-        segmentedControl.controlSize = .small
-        segmentedControl.font = .systemFont(ofSize: 11, weight: .medium)
 
         // Usage rows (rebuilt from data on every update)
         rowsStack.orientation = .vertical
@@ -233,17 +260,15 @@ class MenuViewController: NSViewController {
         rowsStack.spacing = 10
         rowsStack.translatesAutoresizingMaskIntoConstraints = false
 
-        // Last updated
-        lastUpdatedLabel.font = .systemFont(ofSize: 10, weight: .regular)
-        lastUpdatedLabel.textColor = .tertiaryLabelColor
-        lastUpdatedLabel.translatesAutoresizingMaskIntoConstraints = false
+        // Status line: updated, updating, or couldn't refresh (may wrap to two lines)
+        statusLabel.font = .systemFont(ofSize: 10, weight: .regular)
+        statusLabel.textColor = .tertiaryLabelColor
+        statusLabel.maximumNumberOfLines = 2
+        statusLabel.preferredMaxLayoutWidth = 272
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
         // Usage stack (visible when signed in)
-        usageStack = NSStackView(views: [
-            segmentedControl,
-            rowsStack,
-            lastUpdatedLabel,
-        ])
+        usageStack = NSStackView(views: [rowsStack, statusLabel])
         usageStack.orientation = .vertical
         usageStack.alignment = .leading
         usageStack.spacing = 10
@@ -258,7 +283,7 @@ class MenuViewController: NSViewController {
         separator.boxType = .separator
         separator.translatesAutoresizingMaskIntoConstraints = false
 
-        // Auth button (Sign Out / Sign In)
+        // Auth button (Sign Out)
         authButton.bezelStyle = .inline
         authButton.isBordered = false
         authButton.font = .systemFont(ofSize: 11, weight: .regular)
@@ -310,7 +335,6 @@ class MenuViewController: NSViewController {
         footerRow.widthAnchor.constraint(equalTo: mainStack.widthAnchor).isActive = true
         usageStack.widthAnchor.constraint(equalTo: mainStack.widthAnchor).isActive = true
         emptyStateView.widthAnchor.constraint(equalTo: mainStack.widthAnchor).isActive = true
-        segmentedControl.widthAnchor.constraint(equalTo: usageStack.widthAnchor).isActive = true
         rowsStack.widthAnchor.constraint(equalTo: usageStack.widthAnchor).isActive = true
 
         view.addSubview(mainStack)
@@ -386,28 +410,48 @@ class MenuViewController: NSViewController {
 
     var rowCount: Int { rowsStack.arrangedSubviews.count }
     var usageRowCount: Int { rowsStack.arrangedSubviews.filter { $0 is UsageRowView }.count }
+    var rowPercentTexts: [String] { rowsStack.arrangedSubviews.compactMap { ($0 as? UsageRowView)?.percentText } }
+    var rowDetailTexts: [String] { rowsStack.arrangedSubviews.compactMap { ($0 as? UsageRowView)?.detailText } }
+    var statusText: String { statusLabel.stringValue }
+    var isShowingSpinner: Bool { !spinner.isHidden }
     var isShowingUsage: Bool { !usageStack.isHidden }
     var visibleSignInButtons: [String] { buttonStack.arrangedSubviews.compactMap { ($0 as? NSButton)?.title } }
     var subtitleText: String { subtitleLabel.isHidden ? "" : subtitleLabel.stringValue }
     var footerAuthTitle: String? { authButton.isHidden ? nil : authButton.title }
     var emptyTitle: String { emptyTitleLabel.stringValue }
     var emptySubtitle: String { emptySubtitleLabel.stringValue }
+    var containsSegmentedControl: Bool {
+        func search(_ view: NSView) -> Bool { view is NSSegmentedControl || view.subviews.contains(where: search) }
+        return search(view)
+    }
 
     // MARK: - Public Update Methods
 
     func update(with data: UsageData) {
+        lastData = data
+        isFetching = false
+        failure = nil
+        rebuildRows(from: data)
+        renderStatus()
+        resizeToFit()
+    }
+
+    private func rebuildRows(from data: UsageData) {
         rowsStack.arrangedSubviews.forEach {
             rowsStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
         }
+        bucketRows = []
+        let text = makeText()
         for bucket in data.buckets {
             let row = UsageRowView(label: bucket.kind.label)
-            row.update(bucket: bucket)
+            row.update(percentText: text.percentLeft(bucket), used: bucket.percentUsed, colorState: bucket.barColorState, detail: text.detail(bucket))
             addRow(row)
+            bucketRows.append((row, bucket))
         }
-        if let extra = data.extraUsage, extra.isEnabled, let percent = extra.percentUsed {
+        if let extra = data.extraUsage, extra.isEnabled, let used = extra.percentUsed {
             let row = UsageRowView(label: "Extra usage")
-            row.update(percent: percent, colorState: .from(percent: percent), detail: "monthly budget")
+            row.update(percentText: "\(UsageBucket.percentLeft(forUsed: used))% left", used: used, colorState: .from(percent: used), detail: "Monthly budget")
             addRow(row)
         }
         if rowsStack.arrangedSubviews.isEmpty {
@@ -416,11 +460,6 @@ class MenuViewController: NSViewController {
             label.textColor = .secondaryLabelColor
             rowsStack.addArrangedSubview(label)
         }
-
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        lastUpdatedLabel.stringValue = "Updated " + formatter.localizedString(for: data.lastUpdated, relativeTo: Date())
-        resizeToFit()
     }
 
     private func addRow(_ row: UsageRowView) {
@@ -429,10 +468,39 @@ class MenuViewController: NSViewController {
         row.widthAnchor.constraint(equalTo: rowsStack.widthAnchor).isActive = true
     }
 
+    /// Reset countdowns and the status line, worked out again for the current time.
+    func renderTimes() {
+        let text = makeText()
+        for entry in bucketRows { entry.row.setDetail(text.detail(entry.bucket)) }
+        renderStatus()
+        resizeToFit()
+    }
+
+    private func renderStatus() {
+        statusLabel.stringValue = makeText().status(lastUpdated: lastData?.lastUpdated, isFetching: isFetching, failure: failure)
+        spinner.isHidden = !isFetching
+        refreshButton.isHidden = isFetching
+        if isFetching { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
+    }
+
     /// NSPopover tracks preferredContentSize, so two rows and five rows both fit.
     private func resizeToFit() {
         view.layoutSubtreeIfNeeded()
         preferredContentSize = NSSize(width: 300, height: view.fittingSize.height)
+    }
+
+    /// Call when the popover is about to show: the times catch up, then keep moving while it stays open.
+    func popoverWillShow() {
+        renderTimes()
+        clockTimer?.invalidate()
+        clockTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.renderTimes() }
+        }
+    }
+
+    func popoverDidClose() {
+        clockTimer?.invalidate()
+        clockTimer = nil
     }
 
     func render(state: AuthState) {
@@ -486,6 +554,9 @@ class MenuViewController: NSViewController {
     }
 
     private func showEmpty(title: String, subtitle: String, buttons: [NSButton], refreshEnabled: Bool, authTitle: String?) {
+        // A fetch cut short by an expiry or a sign-out never reports back.
+        isFetching = false
+        renderStatus()
         usageStack.isHidden = true
         emptyStateView.isHidden = false
         setSubtitle("")
@@ -516,19 +587,62 @@ class MenuViewController: NSViewController {
     }
 
     func showLoading() {
-        lastUpdatedLabel.stringValue = "Fetching usage..."
+        isFetching = true
+        renderStatus()
     }
 
     func showError(_ message: String) {
-        lastUpdatedLabel.stringValue = "Error: \(message)"
+        isFetching = false
+        failure = message
+        renderStatus()
+        resizeToFit()
+    }
+
+    // MARK: - Settings menu
+
+    func makeSettingsMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let heading = NSMenuItem(title: "Show in Menu Bar", action: nil, keyEquivalent: "")
+        heading.isEnabled = false
+        menu.addItem(heading)
+        let current = currentLayout()
+        for layout in MenuBarLayout.allCases {
+            let item = NSMenuItem(title: layout.menuTitle, action: #selector(layoutChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = layout.rawValue
+            item.state = layout == current ? .on : .off
+            menu.addItem(item)
+        }
+
+        menu.addItem(.separator())
+        let openAtLogin = NSMenuItem(title: "Open at Login", action: #selector(openAtLoginChosen(_:)), keyEquivalent: "")
+        openAtLogin.target = self
+        openAtLogin.state = isOpenAtLoginEnabled() ? .on : .off
+        menu.addItem(openAtLogin)
+        return menu
     }
 
     // MARK: - Actions
 
-    @objc private func segmentChanged() {
-        let mode: RingMetricMode = segmentedControl.selectedSegment == 0 ? .session : .weekly
-        mode.save()
-        onToggleMode?(mode)
+    @objc private func refreshTapped() {
+        onRefresh?()
+    }
+
+    @objc private func settingsTapped(_ sender: NSButton) {
+        // Drop the menu just below the gear.
+        let y = sender.isFlipped ? sender.bounds.maxY + 4 : -4
+        makeSettingsMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: y), in: sender)
+    }
+
+    @objc private func layoutChosen(_ item: NSMenuItem) {
+        guard let raw = item.representedObject as? String, let layout = MenuBarLayout(rawValue: raw) else { return }
+        onChangeLayout?(layout)
+    }
+
+    @objc private func openAtLoginChosen(_ item: NSMenuItem) {
+        onToggleOpenAtLogin?()
     }
 
     @objc private func authTapped() {

@@ -58,7 +58,7 @@ jobs:
           body: |
             ## Claude Usage Widget ${{ github.ref_name }}
 
-            Native macOS menu bar app showing Claude.ai plan usage as a color-coded ring.
+            Native macOS menu bar app showing how much of your Claude.ai session and week is left, as two small rings with the number inside.
 
             ### Install (macOS only)
 
@@ -69,7 +69,7 @@ jobs:
                sudo xattr -cr /Applications/ClaudeUsageWidget.app
                ```
                Enter your Mac password when prompted.
-            4. Open the app. With Claude Code installed, allow the one Keychain prompt and the ring fills. Otherwise click **Sign in with your browser**, approve on claude.ai, close the tab.
+            4. Open the app. With Claude Code installed, allow the one Keychain prompt and the numbers appear. Otherwise click **Sign in with your browser**, approve on claude.ai, close the tab.
 
             > **Why step 3?** macOS blocks apps that aren't code-signed with an Apple Developer certificate. This command tells macOS it's safe to run. You only need to do this once.
 

@@ -8,6 +8,8 @@ final class UsageServiceTests: XCTestCase {
         var updates: [UsageData] = []
         var failures: [ClaudeAPIError] = []
         var expiries = 0
+        var starts = 0
+        func usageServiceDidStartFetching(_ service: UsageService) { starts += 1 }
         func usageService(_ service: UsageService, didUpdate data: UsageData) { updates.append(data) }
         func usageService(_ service: UsageService, didFailWith error: ClaudeAPIError) { failures.append(error) }
         func usageServiceDidDetectSessionExpiry(_ service: UsageService) { expiries += 1 }
@@ -23,6 +25,11 @@ final class UsageServiceTests: XCTestCase {
         service = UsageService(source: WebSessionUsageSource(client: api, orgId: "chat-org"))
         spy = SpyDelegate()
         service.delegate = spy
+    }
+
+    override func tearDown() {
+        service.stop()
+        super.tearDown()
     }
 
     func test_initialState() {
@@ -88,8 +95,97 @@ final class UsageServiceTests: XCTestCase {
         XCTAssertFalse(service.isPolling)
     }
 
+    // MARK: - Fetch state
+
+    func test_fetch_reportsStart_andClearsFetching() async {
+        api.responses = [.success(Fixtures.response(200, Fixtures.usageMinimalJSON))]
+        await service.fetchNow()
+        XCTAssertEqual(spy.starts, 1)
+        XCTAssertEqual(spy.updates.count, 1)
+        XCTAssertFalse(service.isFetching)
+    }
+
+    func test_fetch_whileFetching_isIgnored() async {
+        let source = GatedUsageSource()
+        let service = UsageService(source: source)
+        let spy = SpyDelegate()
+        service.delegate = spy
+        let first = Task { await service.fetchNow() }
+        for _ in 0..<50 where source.calls == 0 { await Task.yield() }
+        XCTAssertTrue(service.isFetching)
+        let second = Task { await service.fetchNow() }
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(source.calls, 1)
+        source.release(Fixtures.response(200, Fixtures.usageMinimalJSON))
+        await first.value
+        await second.value
+        XCTAssertEqual(spy.updates.count, 1)
+        XCTAssertEqual(spy.starts, 1)
+        XCTAssertFalse(service.isFetching)
+    }
+
+    // MARK: - Refresh when a limit resets
+
+    private func date(_ iso: String) -> Date { ISO8601DateFormatter().date(from: iso)! }
+
+    func test_success_schedulesRefreshTenSecondsAfterEarliestReset() async {
+        api.responses = [.success(Fixtures.response(200, Fixtures.usageMinimalJSON))]
+        service.now = { self.date("2026-10-12T20:00:00Z") }
+        await service.fetchNow()
+        XCTAssertEqual(service.resetRefreshDate, date("2026-10-12T22:00:10Z"))
+        XCTAssertEqual(UsageService.resetRefreshDelay, 10)
+    }
+
+    func test_noFutureReset_schedulesNothing() async {
+        api.responses = [.success(Fixtures.response(200, Fixtures.usageMinimalJSON))]
+        service.now = { self.date("2026-11-01T00:00:00Z") }
+        await service.fetchNow()
+        XCTAssertEqual(spy.updates.count, 1)
+        XCTAssertNil(service.resetRefreshDate)
+    }
+
+    func test_stop_cancelsResetRefresh() async {
+        api.responses = [.success(Fixtures.response(200, Fixtures.usageMinimalJSON))]
+        service.now = { self.date("2026-10-12T20:00:00Z") }
+        await service.fetchNow()
+        XCTAssertNotNil(service.resetRefreshDate)
+        service.stop()
+        XCTAssertNil(service.resetRefreshDate)
+    }
+
+    func test_fetchFinishingAfterStop_schedulesNothing() async {
+        let source = GatedUsageSource()
+        let service = UsageService(source: source)
+        service.now = { self.date("2026-10-12T20:00:00Z") }
+        let fetch = Task { await service.fetchNow() }
+        for _ in 0..<50 where source.calls == 0 { await Task.yield() }
+        service.stop()
+        source.release(Fixtures.response(200, Fixtures.usageMinimalJSON))
+        await fetch.value
+        XCTAssertNil(service.resetRefreshDate)
+    }
+
     func test_stop_beforeStart_doesNotCrash() {
         service.stop()
         XCTAssertFalse(service.isPolling)
+    }
+}
+
+/// A usage source that holds every request until the test releases it.
+@MainActor
+private final class GatedUsageSource: UsageSource {
+    let identity: IdentitySource = .ownToken
+    private(set) var calls = 0
+    private var waiting: [CheckedContinuation<APIResponse, Error>] = []
+
+    func fetchUsage() async throws -> APIResponse {
+        calls += 1
+        return try await withCheckedThrowingContinuation { waiting.append($0) }
+    }
+
+    func release(_ response: APIResponse) {
+        let pending = waiting
+        waiting = []
+        pending.forEach { $0.resume(returning: response) }
     }
 }

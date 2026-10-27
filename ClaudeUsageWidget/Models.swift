@@ -3,9 +3,9 @@ import Foundation
 // MARK: - RingColorState
 
 public enum RingColorState: Equatable {
-    case normal    // 0–59%
-    case amber     // 60–84%
-    case critical  // 85–100%
+    case normal    // under 60% used
+    case amber     // 60 to 84% used
+    case critical  // 85% used and up
 
     public static func from(percent: Double) -> RingColorState {
         switch percent {
@@ -19,28 +19,37 @@ public enum RingColorState: Equatable {
     }
 }
 
-// MARK: - RingMetricMode
+// MARK: - MenuBarLayout
 
-public enum RingMetricMode: String {
+/// Which rings the menu bar item shows. Replaced the one-ring Session/Weekly toggle (`ringMetricMode`, v0.2.0 to v0.4.2).
+public enum MenuBarLayout: String, CaseIterable {
+    case both
     case session
-    case weekly
+    case week
 
-    public static let `default`: RingMetricMode = .session
+    public static let userDefaultsKey = "menuBarShows"
 
-    /// UserDefaults key for persisting the preference
-    public static let userDefaultsKey = "ringMetricMode"
+    /// Keys earlier versions wrote. Not migrated: the old ring mode would hide the new two-ring layout.
+    static let legacyKeys = ["ringMetricMode"]
 
-    /// Read the saved preference, falling back to default
-    public static var saved: RingMetricMode {
-        guard let raw = UserDefaults.standard.string(forKey: userDefaultsKey) else {
-            return .default
-        }
-        return RingMetricMode(rawValue: raw) ?? .default
+    public static func load(from defaults: UserDefaults) -> MenuBarLayout {
+        defaults.string(forKey: userDefaultsKey).flatMap(MenuBarLayout.init(rawValue:)) ?? .both
     }
 
-    /// Save the preference to UserDefaults
-    public func save() {
-        UserDefaults.standard.set(rawValue, forKey: Self.userDefaultsKey)
+    public func save(to defaults: UserDefaults) {
+        defaults.set(rawValue, forKey: Self.userDefaultsKey)
+    }
+
+    public static func removeLegacyKeys(from defaults: UserDefaults) {
+        legacyKeys.forEach { defaults.removeObject(forKey: $0) }
+    }
+
+    public var menuTitle: String {
+        switch self {
+        case .both: return "Session and Week"
+        case .session: return "Session Only"
+        case .week: return "Week Only"
+        }
     }
 }
 
@@ -55,7 +64,7 @@ public enum BucketKind: String, CaseIterable {
 
     public var label: String {
         switch self {
-        case .session: return "Current Session"
+        case .session: return "Current session"
         case .weeklyAll: return "Weekly (all models)"
         case .weeklyOpus: return "Weekly (Opus)"
         case .weeklySonnet: return "Weekly (Sonnet)"
@@ -80,34 +89,21 @@ public struct UsageBucket: Equatable {
         self.lockedReason = lockedReason
     }
 
-    /// "resets in 42m" or "resets in 1h 12m"; "–" if nil or past
-    public var resetsInDisplay: String {
-        guard let date = resetsAt else { return "–" }
-        let remaining = date.timeIntervalSinceNow
-        guard remaining > 0 else { return "–" }
-
-        let totalMinutes = Int(remaining / 60)
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-
-        if hours > 0 {
-            return "resets in \(hours)h \(minutes)m"
-        } else {
-            return "resets in \(minutes)m"
-        }
-    }
-
     public var barColorState: RingColorState {
         .from(percent: percentUsed)
     }
 
-    /// "Fri 9:00 AM"; nil if resetsAt is nil
-    public var resetsAtDisplay: String? {
-        guard let date = resetsAt else { return nil }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE h:mm a"
-        return formatter.string(from: date)
+    /// What's left, as a whole percent. 100 minus the rounded used percent, so it always adds up
+    /// to 100 with the "% used" claude.ai shows.
+    public var percentLeft: Int { Self.percentLeft(forUsed: percentUsed) }
+
+    public static func percentLeft(forUsed used: Double) -> Int {
+        // Clamp before converting: Int() traps on a value out of range, and the endpoint is undocumented.
+        let share = used.isNaN ? 0 : min(max(used, 0), 1)
+        return 100 - Int((share * 100).rounded())
     }
+
+    public var isAtLimit: Bool { percentLeft == 0 }
 }
 
 // MARK: - ExtraUsage
@@ -140,18 +136,19 @@ public struct UsageData {
         buckets.first { $0.kind == kind }
     }
 
-    /// Ring value for a metric mode; 0 when the account has no such bucket.
-    public func ringValue(for mode: RingMetricMode) -> Double {
-        switch mode {
-        case .session:
-            return bucket(.session)?.percentUsed ?? 0.0
-        case .weekly:
-            return buckets.filter { $0.kind.isWeekly }.map(\.percentUsed).max() ?? 0.0
+    public var sessionBucket: UsageBucket? { bucket(.session) }
+
+    /// The weekly limit closest to running out; on a tie, the first in BucketKind order.
+    public var weekBucket: UsageBucket? {
+        buckets.filter(\.kind.isWeekly).reduce(nil) { best, next in
+            guard let best else { return next }
+            return next.percentUsed > best.percentUsed ? next : best
         }
     }
 
-    public func ringColorState(for mode: RingMetricMode) -> RingColorState {
-        .from(percent: ringValue(for: mode))
+    /// The earliest reset still ahead of `now`.
+    public func nextReset(after now: Date) -> Date? {
+        buckets.compactMap(\.resetsAt).filter { $0 > now }.min()
     }
 }
 

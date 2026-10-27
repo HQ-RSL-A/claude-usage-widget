@@ -4,6 +4,6 @@ import XCTest
 final class ClaudeUsageWidgetTests: XCTestCase {
     func test_bundleShortVersion_isMarketingVersion() {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
-        XCTAssertEqual(version, "0.4.2")
+        XCTAssertEqual(version, "0.5.0")
     }
 }

@@ -2,7 +2,7 @@
 
 A native macOS menu bar app that shows your Claude.ai plan usage at a glance.
 
-A small ring in your menu bar fills up as you use Claude. It turns amber when you're getting close, red when you're almost out. Click it to see the full breakdown.
+Two small rings in your menu bar show how much of your session and of your week is left, as a number inside each ring. A ring fills up as you use Claude and turns amber when you're getting close, red when you're almost out. Click it to see the full breakdown.
 
 ---
 
@@ -11,7 +11,8 @@ A small ring in your menu bar fills up as you use Claude. It turns amber when yo
 - **Current session** usage with time until reset
 - **Weekly usage** across all models
 - **Per-model weekly buckets** (Opus, Sonnet) and **extra usage**, only when your plan has them
-- Color-coded ring that changes as you approach your limits
+- Two rings with the number left inside: session on the left, week on the right. Hover for reset times
+- The gear in the popover picks one ring or both, and turns on Open at Login
 
 ---
 
@@ -24,7 +25,7 @@ A small ring in your menu bar fills up as you use Claude. It turns amber when yo
    sudo xattr -cr /Applications/ClaudeUsageWidget.app
    ```
    Enter your Mac password when prompted.
-4. Open the app. If Claude Code is installed, the widget asks once to read its sign-in and the ring fills. Otherwise click **Sign in with your browser**: claude.ai opens in your browser, you approve, and the tab tells you to close it.
+4. Open the app. If Claude Code is installed, the widget asks once to read its sign-in and the numbers appear. Otherwise click **Sign in with your browser**: claude.ai opens in your browser, you approve, and the tab tells you to close it.
 
 > **Why step 3?** macOS blocks apps that aren't signed with an Apple Developer certificate. This is a free, open-source app and isn't code-signed yet, so macOS flags it as "damaged." The command above tells macOS it's safe to run. You only need to do this once.
 
@@ -76,7 +77,7 @@ The browser route uses Anthropic's OAuth as Claude Code does; Anthropic publishe
 
 ## Status
 
-v0.4.2 - sign in with your browser or reuse Claude Code's sign-in. macOS only.
+v0.5.0 - what's left of your session and your week, right in the menu bar. macOS only.
 
 ---
 
