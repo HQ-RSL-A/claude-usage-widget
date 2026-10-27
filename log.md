@@ -2,6 +2,14 @@
 
 Newest entry on top.
 
+## 2026-10-27 00:00 PT
+
+v0.5.0 on branch `feat/menu-bar-numbers`, not merged, not tagged. Rahul's ask: show what's left of the session and the week in the menu bar without opening the popover ("it can rotate between those two numbers, or something better"), plus other UI fixes. He chose numbers that count down (what's left) with bars and rings that still fill with use, and mid-build asked for white digits because colored ones get lost on colored wallpapers.
+
+Built: two rings side by side (session, week), the number left inside each, digits in the menu bar's color, only arcs amber or red; dimmed dashes when signed out or without numbers, dimmed numbers after 15 minutes without a refresh; tooltip with both limits and reset times (HQ-119); VoiceOver label and value. Popover: "88% left" rows, "Resets in 3 hr 10 min" (weekly too when under a day), "Limit reached", a status line that stays current ("Updated in 0 seconds" was stuck), refresh spinner, and a gear menu (Show in Menu Bar: Session and Week, Session Only, Week Only; Open at Login, HQ-114) replacing the Session/Weekly switch. Extra fetch 10 s after a reset and on wake; one fetch at a time. Preview mode (`-previewUsage <scenario>`) for checking the real menu bar without the Keychain. 196 tests. Design: `docs/plans/2026-10-26-v0.5.0-menu-bar-numbers-design.md`. Plan: `docs/plans/2026-10-26-v0.5.0-implementation-plan.md`.
+
+Checked on the real menu bar with a Release build made with CI's signing flags: every preview scenario screenshotted, tooltip and VoiceOver label read through System Events, popover screenshotted. Rahul used the gear menu himself while the build ran (layout changed to Week Only, then Session Only). Not yet checked: Open at Login on this unsigned build (needs one tick and untick), and real numbers through the Claude Code route (the new build raises one Keychain prompt). Dropped from the playback: Cmd-R (a popover from a menu bar app that never activates gets no key presses).
+
 ## 2026-10-12 20:45 PT
 
 Session wrap. State: `main` is at v0.4.2 and GitHub has one branch, one tag and one release. Since the entry below: Rahul asked for the widget's saved data to be wiped from his Mac too, so its Keychain item `io.rsla.ClaudeUsageWidget`, its WebKit, HTTP storage, cache and temp folders and its preferences were deleted (Claude Code's own Keychain item was not touched). He then installed v0.4.2 from the released DMG on that clean Mac and reported "Looking good. Works so far!". Which of the five checks he ran is not recorded.
