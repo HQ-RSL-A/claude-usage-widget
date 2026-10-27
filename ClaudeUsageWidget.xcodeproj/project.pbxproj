@@ -22,6 +22,7 @@
 		57ECBA428E584B97100A5610 /* OutsideClickDismisserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FA1F94E78DF1E0612A43B9E /* OutsideClickDismisserTests.swift */; };
 		65EC8EFF98EA6EDCD127627A /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4EA7162C7D5EF409DC9D112 /* AuthManager.swift */; };
 		6C71BB7933B21E7E2A8ACD4B /* FakeClaudeAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666BACBDFDE9072097D2DEC7 /* FakeClaudeAPI.swift */; };
+		71B3919C51584A4A27FF6288 /* UsageTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0D60BD4A3DD781A9A7176E /* UsageTextTests.swift */; };
 		7A6D110AA4FFC3742C565855 /* TokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 757CBC915EDDA02CA093468F /* TokenStore.swift */; };
 		7ECA99E64D58376AF8175958 /* OrganizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D235C1C1C78A66606C60F126 /* OrganizationTests.swift */; };
 		8485462501775B4C911940E7 /* OAuthClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BC0E7971234B0B1279F89EE /* OAuthClient.swift */; };
@@ -34,6 +35,7 @@
 		A0AB1BD1919DAC20D0066CF8 /* UsageServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BD395ED69FE96C6A6AAB52F /* UsageServiceTests.swift */; };
 		A503A78AB07271FCBBB18D2B /* RefreshIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31CA26DF864E570115CB6D44 /* RefreshIcon.swift */; };
 		A71279EB6E937C4EADD8C2E5 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25194CA143CE94229B4E506A /* main.swift */; };
+		AB528D00AF1C5565EAF843AE /* UsageText.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD37F75005A65A7DA6651415 /* UsageText.swift */; };
 		AFAA0BAD2197F3BD672F99E3 /* ModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0BE9B7536A7ADD8E35AC0EB /* ModelsTests.swift */; };
 		BEC4D6D9C7C9C116C24A5371 /* ClaudeAPIErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14A3BF365287F046F88122B4 /* ClaudeAPIErrorTests.swift */; };
 		C38C63A5F17C772487CF1698 /* WebSessionAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DA0FC6F4D2062938042F4F7 /* WebSessionAuth.swift */; };
@@ -73,6 +75,7 @@
 		3B363DAB17FDD4CB08560C2C /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		3BBF79052C78C14D6D1B8B4B /* ClaudeUsageWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ClaudeUsageWidget.entitlements; sourceTree = "<group>"; };
 		4840AE64CE3B74A3125F3AC3 /* InMemoryStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InMemoryStores.swift; sourceTree = "<group>"; };
+		4B0D60BD4A3DD781A9A7176E /* UsageTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageTextTests.swift; sourceTree = "<group>"; };
 		4B12A091E0BCE60FFCB14EE9 /* ClaudeAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeAPIClient.swift; sourceTree = "<group>"; };
 		4DA0FC6F4D2062938042F4F7 /* WebSessionAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSessionAuth.swift; sourceTree = "<group>"; };
 		5068AE4D8C9ADDC58DD0924D /* TokenStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenStoreTests.swift; sourceTree = "<group>"; };
@@ -101,6 +104,7 @@
 		BE5924B5B6A36639BD1C9B90 /* UsageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageService.swift; sourceTree = "<group>"; };
 		CC56F2E1EAAC21FF2273626F /* ClaudeUsageWidgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeUsageWidgetTests.swift; sourceTree = "<group>"; };
 		D235C1C1C78A66606C60F126 /* OrganizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganizationTests.swift; sourceTree = "<group>"; };
+		DD37F75005A65A7DA6651415 /* UsageText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageText.swift; sourceTree = "<group>"; };
 		E0BE9B7536A7ADD8E35AC0EB /* ModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTests.swift; sourceTree = "<group>"; };
 		E2C5AB5E108D49800B54994C /* PKCETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PKCETests.swift; sourceTree = "<group>"; };
 		E329C46A70731B8C66F9BC5F /* CallbackServerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallbackServerTests.swift; sourceTree = "<group>"; };
@@ -137,6 +141,7 @@
 				5068AE4D8C9ADDC58DD0924D /* TokenStoreTests.swift */,
 				8BD395ED69FE96C6A6AAB52F /* UsageServiceTests.swift */,
 				5D936F308A12BC4ADE41A732 /* UsageSourceTests.swift */,
+				4B0D60BD4A3DD781A9A7176E /* UsageTextTests.swift */,
 				6E4BBFDB1B87CCE946934898 /* WebSessionAuthTests.swift */,
 			);
 			path = ClaudeUsageWidgetTests;
@@ -176,6 +181,7 @@
 				757CBC915EDDA02CA093468F /* TokenStore.swift */,
 				BE5924B5B6A36639BD1C9B90 /* UsageService.swift */,
 				7C1406B3E8B8B10E7A3688E3 /* UsageSource.swift */,
+				DD37F75005A65A7DA6651415 /* UsageText.swift */,
 				4DA0FC6F4D2062938042F4F7 /* WebSessionAuth.swift */,
 			);
 			path = ClaudeUsageWidget;
@@ -302,6 +308,7 @@
 				7A6D110AA4FFC3742C565855 /* TokenStore.swift in Sources */,
 				30CDDF21A3FE066F30766C97 /* UsageService.swift in Sources */,
 				D7C1126D5ACC9B951FD3B2CD /* UsageSource.swift in Sources */,
+				AB528D00AF1C5565EAF843AE /* UsageText.swift in Sources */,
 				C38C63A5F17C772487CF1698 /* WebSessionAuth.swift in Sources */,
 				A71279EB6E937C4EADD8C2E5 /* main.swift in Sources */,
 			);
@@ -332,6 +339,7 @@
 				C71467A3487AF78965061C69 /* TokenStoreTests.swift in Sources */,
 				A0AB1BD1919DAC20D0066CF8 /* UsageServiceTests.swift in Sources */,
 				87B2A42CB3628E9C6666F4C6 /* UsageSourceTests.swift in Sources */,
+				71B3919C51584A4A27FF6288 /* UsageTextTests.swift in Sources */,
 				1F390D3F3F76840808EBCFB4 /* WebSessionAuthTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
