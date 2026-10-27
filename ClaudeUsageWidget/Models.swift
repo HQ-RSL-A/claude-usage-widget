@@ -98,7 +98,9 @@ public struct UsageBucket: Equatable {
     public var percentLeft: Int { Self.percentLeft(forUsed: percentUsed) }
 
     public static func percentLeft(forUsed used: Double) -> Int {
-        max(0, min(100, 100 - Int((used * 100).rounded())))
+        // Clamp before converting: Int() traps on a value out of range, and the endpoint is undocumented.
+        let share = used.isNaN ? 0 : min(max(used, 0), 1)
+        return 100 - Int((share * 100).rounded())
     }
 
     public var isAtLimit: Bool { percentLeft == 0 }

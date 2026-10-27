@@ -17,6 +17,7 @@ final class PreviewScenarioTests: XCTestCase {
     }
 
     func test_previewScenarios_coverTheStates() {
+        XCTAssertEqual(PreviewScenario.fresh.data(now: now)?.sessionBucket?.percentLeft, 100)
         XCTAssertEqual(PreviewScenario.normal.data(now: now)?.weekBucket?.barColorState, .normal)
         XCTAssertEqual(PreviewScenario.amber.data(now: now)?.weekBucket?.barColorState, .amber)
         XCTAssertEqual(PreviewScenario.critical.data(now: now)?.weekBucket?.barColorState, .critical)

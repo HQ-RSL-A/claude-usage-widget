@@ -86,6 +86,18 @@ final class MenuViewTests: XCTestCase {
         XCTAssertEqual(vc.usageRowCount, 2)
     }
 
+    /// A fetch cut short by an expiry or a sign-out never reports back: the spinner must stop anyway.
+    func test_leavingSignedIn_stopsTheSpinner() {
+        let vc = signedInController()
+        vc.showLoading()
+        vc.render(state: .sessionExpired(.claudeCode))
+        XCTAssertFalse(vc.isShowingSpinner)
+        vc.render(state: .signedIn(.claudeCode, nil))
+        vc.showLoading()
+        vc.render(state: .signedOut(claudeCodeAvailable: false))
+        XCTAssertFalse(vc.isShowingSpinner)
+    }
+
     func test_renderTimes_usesTheCurrentTime() throws {
         let vc = signedInController()
         vc.update(with: try max20x())

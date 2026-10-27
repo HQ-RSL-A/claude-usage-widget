@@ -99,15 +99,19 @@ enum StatusIcon {
 
     private static func drawNumber(_ value: Int, at center: CGPoint, color: NSColor) {
         let digits = String(value)
-        let font = numberFont(size: digits.count >= 3 ? 7.5 : 9)
-        let text = NSAttributedString(string: digits, attributes: [.font: font, .foregroundColor: color])
+        // "100", the start of every session, is the widest: smaller and a little tighter so it clears the track.
+        let isWide = digits.count >= 3
+        let font = numberFont(size: isWide ? 6.8 : 9)
+        let text = NSMutableAttributedString(string: digits, attributes: [.font: font, .foregroundColor: color])
+        if isWide { text.addAttribute(.kern, value: -0.25, range: NSRange(location: 0, length: digits.count - 1)) }
         // Center the digits' cap height on the ring; draw(at:) takes the bottom of the line, below the baseline.
         let baseline = center.y - font.capHeight / 2
         text.draw(at: CGPoint(x: center.x - text.size().width / 2, y: baseline + font.descender))
     }
 
+    /// Proportional digits (the system default): the ring is a fixed size, so nothing shifts as numbers change.
     private static func numberFont(size: CGFloat) -> NSFont {
-        let base = NSFont.monospacedDigitSystemFont(ofSize: size, weight: .bold)
+        let base = NSFont.systemFont(ofSize: size, weight: .bold)
         guard let rounded = base.fontDescriptor.withDesign(.rounded) else { return base }
         return NSFont(descriptor: rounded, size: size) ?? base
     }

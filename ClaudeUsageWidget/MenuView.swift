@@ -554,6 +554,9 @@ class MenuViewController: NSViewController {
     }
 
     private func showEmpty(title: String, subtitle: String, buttons: [NSButton], refreshEnabled: Bool, authTitle: String?) {
+        // A fetch cut short by an expiry or a sign-out never reports back.
+        isFetching = false
+        renderStatus()
         usageStack.isHidden = true
         emptyStateView.isHidden = false
         setSubtitle("")

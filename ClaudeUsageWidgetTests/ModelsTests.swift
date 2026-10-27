@@ -37,6 +37,14 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(bucket(.session, -0.1).percentLeft, 100)
     }
 
+    /// The endpoint is undocumented: a wild utilization must not crash the whole-number conversion.
+    func test_percentLeft_survivesAbsurdValues() {
+        XCTAssertEqual(UsageBucket.percentLeft(forUsed: 1e300), 0)
+        XCTAssertEqual(UsageBucket.percentLeft(forUsed: -1e300), 100)
+        XCTAssertEqual(UsageBucket.percentLeft(forUsed: .infinity), 0)
+        XCTAssertEqual(UsageBucket.percentLeft(forUsed: -.infinity), 100)
+    }
+
     func test_isAtLimit_whenNothingIsLeft() {
         XCTAssertTrue(bucket(.session, 0.996).isAtLimit)
         XCTAssertFalse(bucket(.session, 0.99).isAtLimit)

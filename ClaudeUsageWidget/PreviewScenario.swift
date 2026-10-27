@@ -3,6 +3,7 @@ import Foundation
 /// Made-up usage for checking the menu bar and popover on a real Mac without signing in.
 /// Launch with `open ClaudeUsageWidget.app --args -previewUsage amber`: no Keychain read, no WebKit, no network.
 enum PreviewScenario: String, CaseIterable {
+    case fresh
     case normal
     case amber
     case critical
@@ -32,6 +33,8 @@ enum PreviewScenario: String, CaseIterable {
         }
         let hour: TimeInterval = 3600
         switch self {
+        case .fresh:
+            return UsageData(buckets: [bucket(.session, 0, resetsIn: 5 * hour), bucket(.weeklyAll, 0.34, resetsIn: 4 * 24 * hour)], extraUsage: nil, lastUpdated: now)
         case .normal:
             return UsageData(buckets: [bucket(.session, 0.12, resetsIn: 3 * hour + 600), bucket(.weeklyAll, 0.34, resetsIn: 4 * 24 * hour)], extraUsage: nil, lastUpdated: now)
         case .amber:

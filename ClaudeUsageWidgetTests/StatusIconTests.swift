@@ -60,6 +60,22 @@ final class StatusIconTests: XCTestCase {
         XCTAssertGreaterThan(track.blueComponent, track.redComponent * 0.8, "white track, not amber")
     }
 
+    /// Every session starts at 100: the three digits must clear the track (its inner edge is 7.6 pt from the center).
+    func test_image_hundredClearsTheTrack() {
+        let fresh = StatusIconModel(rings: [.usage(left: 100, used: 0, color: .normal)], isDimmed: false)
+        let rep = render(StatusIcon.image(for: fresh, darkMenuBar: true))
+        // Nothing used, so no arc: every pixel above 50% opacity is digit ink (the track is drawn at 25%).
+        var farthest: CGFloat = 0
+        for x in 0..<rep.pixelsWide {
+            for y in 0..<rep.pixelsHigh where rep.colorAt(x: x, y: y)!.alphaComponent > 0.5 {
+                let dx = (CGFloat(x) + 0.5) / 2 - 10, dy = (CGFloat(y) + 0.5) / 2 - 10
+                farthest = max(farthest, (dx * dx + dy * dy).squareRoot())
+            }
+        }
+        XCTAssertGreaterThan(farthest, 3, "the digits were drawn")
+        XCTAssertLessThan(farthest, 6.9, "digit ink reaches \(farthest) pt from the center")
+    }
+
     // MARK: - Rendering helpers
 
     /// Renders at 2x on a transparent bitmap.
