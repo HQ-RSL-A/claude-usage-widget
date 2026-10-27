@@ -22,6 +22,7 @@
 		5698FE2A32F06BAF92851D8C /* Fixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F65BA1566A01BFB2756EE7E0 /* Fixtures.swift */; };
 		57ECBA428E584B97100A5610 /* OutsideClickDismisserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FA1F94E78DF1E0612A43B9E /* OutsideClickDismisserTests.swift */; };
 		5A5E5861C63576583E40E4FF /* StatusIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48AE2AD91D94021162413864 /* StatusIconTests.swift */; };
+		5B7CEC1136BF4572DD7DE89E /* OpenAtLoginTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA2FCDF2B16630791974106 /* OpenAtLoginTests.swift */; };
 		65EC8EFF98EA6EDCD127627A /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4EA7162C7D5EF409DC9D112 /* AuthManager.swift */; };
 		6C71BB7933B21E7E2A8ACD4B /* FakeClaudeAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666BACBDFDE9072097D2DEC7 /* FakeClaudeAPI.swift */; };
 		71B3919C51584A4A27FF6288 /* UsageTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0D60BD4A3DD781A9A7176E /* UsageTextTests.swift */; };
@@ -55,6 +56,7 @@
 		E7FFC601ACE534EAAE6FB899 /* PKCETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C5AB5E108D49800B54994C /* PKCETests.swift */; };
 		EB0528451C2EA5B139D6452C /* Organization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A36DC05FB3F76B3B1FA4E1F /* Organization.swift */; };
 		F4221A6E9CBB3B1C816227E4 /* FakeCallbackServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E905B55A0810517035A0BA5D /* FakeCallbackServer.swift */; };
+		FB4FE0D8163606CC3C173AB1 /* OpenAtLogin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58DF63DC4601F4F6D7A2D741 /* OpenAtLogin.swift */; };
 		FC2CF5498F60888A77C7EF47 /* InMemoryStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4840AE64CE3B74A3125F3AC3 /* InMemoryStores.swift */; };
 /* End PBXBuildFile section */
 
@@ -80,6 +82,7 @@
 		34084B023389C19C228432A9 /* StatusPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusPresentation.swift; sourceTree = "<group>"; };
 		340F35F3EBF585A8DA6E4F4D /* StatusIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusIcon.swift; sourceTree = "<group>"; };
 		3B363DAB17FDD4CB08560C2C /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		3BA2FCDF2B16630791974106 /* OpenAtLoginTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAtLoginTests.swift; sourceTree = "<group>"; };
 		3BBF79052C78C14D6D1B8B4B /* ClaudeUsageWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ClaudeUsageWidget.entitlements; sourceTree = "<group>"; };
 		4840AE64CE3B74A3125F3AC3 /* InMemoryStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InMemoryStores.swift; sourceTree = "<group>"; };
 		48AE2AD91D94021162413864 /* StatusIconTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusIconTests.swift; sourceTree = "<group>"; };
@@ -88,6 +91,7 @@
 		4DA0FC6F4D2062938042F4F7 /* WebSessionAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSessionAuth.swift; sourceTree = "<group>"; };
 		5068AE4D8C9ADDC58DD0924D /* TokenStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenStoreTests.swift; sourceTree = "<group>"; };
 		55E1104C0B872EB2007845ED /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		58DF63DC4601F4F6D7A2D741 /* OpenAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAtLogin.swift; sourceTree = "<group>"; };
 		5D936F308A12BC4ADE41A732 /* UsageSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSourceTests.swift; sourceTree = "<group>"; };
 		6268D48273DCD1FF3A0EE701 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		64ED782709562E08D543DE15 /* OutsideClickDismisser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutsideClickDismisser.swift; sourceTree = "<group>"; };
@@ -141,6 +145,7 @@
 				1E4194E213B61DCD558C0D4E /* MenuViewTests.swift */,
 				E0BE9B7536A7ADD8E35AC0EB /* ModelsTests.swift */,
 				AD555F7D5BF4D5E54461BE5E /* OAuthClientTests.swift */,
+				3BA2FCDF2B16630791974106 /* OpenAtLoginTests.swift */,
 				D235C1C1C78A66606C60F126 /* OrganizationTests.swift */,
 				9FA1F94E78DF1E0612A43B9E /* OutsideClickDismisserTests.swift */,
 				E2C5AB5E108D49800B54994C /* PKCETests.swift */,
@@ -183,6 +188,7 @@
 				F79B0C04B600DE4E034CFBB6 /* MenuView.swift */,
 				3B363DAB17FDD4CB08560C2C /* Models.swift */,
 				9BC0E7971234B0B1279F89EE /* OAuthClient.swift */,
+				58DF63DC4601F4F6D7A2D741 /* OpenAtLogin.swift */,
 				8A36DC05FB3F76B3B1FA4E1F /* Organization.swift */,
 				64ED782709562E08D543DE15 /* OutsideClickDismisser.swift */,
 				70D27040048961AA3428D226 /* PKCE.swift */,
@@ -312,6 +318,7 @@
 				D8BDD746710D4A7503A41BFD /* MenuView.swift in Sources */,
 				3BDE4F0A3C178440B42467C4 /* Models.swift in Sources */,
 				8485462501775B4C911940E7 /* OAuthClient.swift in Sources */,
+				FB4FE0D8163606CC3C173AB1 /* OpenAtLogin.swift in Sources */,
 				EB0528451C2EA5B139D6452C /* Organization.swift in Sources */,
 				4A72D8C2ACB3604ED8397468 /* OutsideClickDismisser.swift in Sources */,
 				CFD02D8A84A16AED73241DC0 /* PKCE.swift in Sources */,
@@ -345,6 +352,7 @@
 				E01C68C138CE9F56490C721C /* MenuViewTests.swift in Sources */,
 				AFAA0BAD2197F3BD672F99E3 /* ModelsTests.swift in Sources */,
 				0077A3105620BA8E99A31D7A /* OAuthClientTests.swift in Sources */,
+				5B7CEC1136BF4572DD7DE89E /* OpenAtLoginTests.swift in Sources */,
 				7ECA99E64D58376AF8175958 /* OrganizationTests.swift in Sources */,
 				57ECBA428E584B97100A5610 /* OutsideClickDismisserTests.swift in Sources */,
 				E7FFC601ACE534EAAE6FB899 /* PKCETests.swift in Sources */,
