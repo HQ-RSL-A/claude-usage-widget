@@ -22,6 +22,14 @@ final class GrokBotReader: ServiceReader {
         Base32.lowercaseNoPadding(Data(key.utf8)) + ".blob"
     }
 
+    /// How Grok Bot spells an account slot inside a file name: every character but letters, digits and `- _ . ! ~ * ' ( )`
+    /// escaped as UTF-8, a browser's `encodeURIComponent`. The account-slot blob holds the slot as typed
+    /// ("google-oauth2|user"), the usage file's name has it escaped ("google-oauth2%7Cuser").
+    nonisolated static func fileNameSlot(for slot: String) -> String {
+        let unescaped = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()")
+        return slot.addingPercentEncoding(withAllowedCharacters: unescaped) ?? slot
+    }
+
     private static let slotKey = "sand.client.slice.client-meta.account-slot"
     private static let slotSchemaVersion = 1
     private static let usageSchemaVersion = 2
@@ -52,9 +60,8 @@ final class GrokBotReader: ServiceReader {
         }
         guard let slot = slotBlob.value, !slot.isEmpty else { return .notSignedIn(hint: Self.signInHint) }
 
-        // That account's weekly usage. The slot goes into the key as saved, already percent-encoded.
-        let usageKey = "sand.client.slice.account.\(slot).weekly-usage.cache"
-        guard let usageData = blob(forKey: usageKey) else { return .notSignedIn(hint: Self.loadUsageHint) }
+        // That account's weekly usage.
+        guard let usageData = usageBlob(forSlot: slot) else { return .notSignedIn(hint: Self.loadUsageHint) }
         guard let usageBlob = try? JSONDecoder().decode(RawUsageBlob.self, from: usageData),
               usageBlob.schemaVersion == Self.usageSchemaVersion else {
             return .unavailable(reason: Self.formatChangedReason)
@@ -70,6 +77,17 @@ final class GrokBotReader: ServiceReader {
         let weekly = ServiceLimit(label: "Weekly", percentUsed: percentUsed / 100,
                                   resetsAt: usage.nextResetMs.map(Self.date(milliseconds:)))
         return .reading(limits: [weekly], readAt: Self.date(milliseconds: readAtMs))
+    }
+
+    /// The weekly usage saved for `slot`, or nil when there is none. The key spells the slot escaped, as Grok Bot does.
+    /// A slot that was saved already escaped is tried as saved when the escaped spelling finds nothing: escaping it a
+    /// second time would look for a file that is not there. The slot of another account is never tried.
+    private func usageBlob(forSlot slot: String) -> Data? {
+        let escaped = Self.fileNameSlot(for: slot)
+        for spelling in (escaped == slot ? [slot] : [escaped, slot]) {
+            if let data = blob(forKey: "sand.client.slice.account.\(spelling).weekly-usage.cache") { return data }
+        }
+        return nil
     }
 
     /// What Grok Bot saved under `key`, or nil when there is no such file or it cannot be read.

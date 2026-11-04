@@ -156,6 +156,61 @@ final class GrokBotReaderTests: XCTestCase {
         XCTAssertNil(weekly.resetsAt)
     }
 
+    // MARK: - The slot in the file name
+
+    /// Found on the real Mac (2026-11-04): the account-slot blob holds the slot as typed, "google-oauth2|user_X", but
+    /// Grok Bot names the usage file after it with every unsafe character escaped, "google-oauth2%7Cuser_X". Looking for
+    /// the slot as saved found no file, and the panel told a person whose usage was there to open Grok Bot.
+    func testSlotHoldingAnUnescapedCharacterFindsItsEscapedFileName() async throws {
+        try write(#"{"schemaVersion":1,"value":"google-oauth2|user_X"}"#, key: Self.slotKey)
+        try writeUsage(slot: "google-oauth2%7Cuser_X")
+
+        let state = await reader.read()
+
+        let result = try XCTUnwrap(reading(state))
+        XCTAssertEqual(result.readAt, Self.readAt)
+        XCTAssertEqual(try XCTUnwrap(result.limits.first).percentUsed, 0.0704, accuracy: 1e-9)
+    }
+
+    /// A slot saved already escaped (what the spec first assumed) is still found, as saved.
+    func testSlotThatIsAlreadyEscapedIsFoundAsSaved() async throws {
+        try writeSlot()   // "google-oauth2%7Cuser_X"
+        try writeUsage()
+
+        let state = await reader.read()
+
+        XCTAssertEqual(try XCTUnwrap(reading(state)).readAt, Self.readAt)
+    }
+
+    /// A slot with nothing to escape is the same either way.
+    func testSlotWithNothingToEscapeIsFound() async throws {
+        try write(#"{"schemaVersion":1,"value":"user_X-1.2"}"#, key: Self.slotKey)
+        try writeUsage(slot: "user_X-1.2")
+
+        let state = await reader.read()
+
+        XCTAssertEqual(try XCTUnwrap(reading(state)).readAt, Self.readAt)
+    }
+
+    /// Another account's usage in the folder is still not shown for the account signed in now, however the slot is spelled.
+    func testAnotherAccountsUsageIsNotShownForAnUnescapedSlot() async throws {
+        try write(#"{"schemaVersion":1,"value":"google-oauth2|user_X"}"#, key: Self.slotKey)
+        try writeUsage(slot: "google-oauth2%7Cuser_Y")
+
+        let state = await reader.read()
+
+        XCTAssertEqual(state, .notSignedIn(hint: "Open Grok Bot to load its usage"))
+    }
+
+    /// The escaping is a browser's `encodeURIComponent`: everything but letters, digits and `- _ . ! ~ * ' ( )`, as UTF-8.
+    func testFileNameSlotEscapesLikeEncodeURIComponent() {
+        XCTAssertEqual(GrokBotReader.fileNameSlot(for: "google-oauth2|user_X"), "google-oauth2%7Cuser_X")
+        XCTAssertEqual(GrokBotReader.fileNameSlot(for: "a b|c@d:e/f.g-h_i!j~k*l'm(n)o"), "a%20b%7Cc%40d%3Ae%2Ff.g-h_i!j~k*l'm(n)o")
+        XCTAssertEqual(GrokBotReader.fileNameSlot(for: "caf\u{E9}|\u{1F600}"), "caf%C3%A9%7C%F0%9F%98%80")
+        XCTAssertEqual(GrokBotReader.fileNameSlot(for: "100%"), "100%25", "a literal percent sign is escaped too")
+        XCTAssertEqual(GrokBotReader.fileNameSlot(for: "plain"), "plain")
+    }
+
     // MARK: - Nothing to show yet
 
     func testMissingSlotSaysSignIn() async throws {
