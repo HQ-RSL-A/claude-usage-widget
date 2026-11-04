@@ -22,6 +22,7 @@
 		5698FE2A32F06BAF92851D8C /* Fixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F65BA1566A01BFB2756EE7E0 /* Fixtures.swift */; };
 		57ECBA428E584B97100A5610 /* OutsideClickDismisserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FA1F94E78DF1E0612A43B9E /* OutsideClickDismisserTests.swift */; };
 		5A5E5861C63576583E40E4FF /* StatusIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48AE2AD91D94021162413864 /* StatusIconTests.swift */; };
+		5A86DB0193DB8C1E1305A175 /* ServiceIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50A8E7C68F11F3BC59918028 /* ServiceIconTests.swift */; };
 		5B7CEC1136BF4572DD7DE89E /* OpenAtLoginTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA2FCDF2B16630791974106 /* OpenAtLoginTests.swift */; };
 		65EC8EFF98EA6EDCD127627A /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4EA7162C7D5EF409DC9D112 /* AuthManager.swift */; };
 		6901F784EB889A7684051E3F /* PreviewScenarioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D64F6BDDAE57E59296631D34 /* PreviewScenarioTests.swift */; };
@@ -52,6 +53,7 @@
 		C5C102D1EC70C0D263F4FBFB /* ClaudeCodeCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EFFE802536AC29DD0C7FBAC /* ClaudeCodeCredentials.swift */; };
 		C71467A3487AF78965061C69 /* TokenStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5068AE4D8C9ADDC58DD0924D /* TokenStoreTests.swift */; };
 		CFD02D8A84A16AED73241DC0 /* PKCE.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70D27040048961AA3428D226 /* PKCE.swift */; };
+		CFF2FA60E3D46B6AFF96CFD3 /* ServiceIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA7DF8F2FCF831EF0A9F303 /* ServiceIcon.swift */; };
 		D7C1126D5ACC9B951FD3B2CD /* UsageSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1406B3E8B8B10E7A3688E3 /* UsageSource.swift */; };
 		D8BDD746710D4A7503A41BFD /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F79B0C04B600DE4E034CFBB6 /* MenuView.swift */; };
 		D8CD1941E8CDC07A982F5EB2 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D705336A2AB929001115064 /* AppDelegate.swift */; };
@@ -92,6 +94,7 @@
 		4B12A091E0BCE60FFCB14EE9 /* ClaudeAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeAPIClient.swift; sourceTree = "<group>"; };
 		4DA0FC6F4D2062938042F4F7 /* WebSessionAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSessionAuth.swift; sourceTree = "<group>"; };
 		5068AE4D8C9ADDC58DD0924D /* TokenStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenStoreTests.swift; sourceTree = "<group>"; };
+		50A8E7C68F11F3BC59918028 /* ServiceIconTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceIconTests.swift; sourceTree = "<group>"; };
 		55E1104C0B872EB2007845ED /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		58DF63DC4601F4F6D7A2D741 /* OpenAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAtLogin.swift; sourceTree = "<group>"; };
 		5D936F308A12BC4ADE41A732 /* UsageSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSourceTests.swift; sourceTree = "<group>"; };
@@ -99,6 +102,7 @@
 		64ED782709562E08D543DE15 /* OutsideClickDismisser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutsideClickDismisser.swift; sourceTree = "<group>"; };
 		666BACBDFDE9072097D2DEC7 /* FakeClaudeAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeClaudeAPI.swift; sourceTree = "<group>"; };
 		6E4BBFDB1B87CCE946934898 /* WebSessionAuthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSessionAuthTests.swift; sourceTree = "<group>"; };
+		6FA7DF8F2FCF831EF0A9F303 /* ServiceIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceIcon.swift; sourceTree = "<group>"; };
 		70D27040048961AA3428D226 /* PKCE.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PKCE.swift; sourceTree = "<group>"; };
 		71446593A89D0E9BF37F1104 /* StatusItemRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemRendererTests.swift; sourceTree = "<group>"; };
 		716F983DB21BA5B84AF498BF /* ProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessRunner.swift; sourceTree = "<group>"; };
@@ -158,6 +162,7 @@
 				9FA1F94E78DF1E0612A43B9E /* OutsideClickDismisserTests.swift */,
 				E2C5AB5E108D49800B54994C /* PKCETests.swift */,
 				D64F6BDDAE57E59296631D34 /* PreviewScenarioTests.swift */,
+				50A8E7C68F11F3BC59918028 /* ServiceIconTests.swift */,
 				CF654DB2DE4F1851A52460A3 /* ServicesTests.swift */,
 				48AE2AD91D94021162413864 /* StatusIconTests.swift */,
 				71446593A89D0E9BF37F1104 /* StatusItemRendererTests.swift */,
@@ -204,6 +209,7 @@
 				70D27040048961AA3428D226 /* PKCE.swift */,
 				C304699C0A5DF0441643DE2E /* PreviewScenario.swift */,
 				716F983DB21BA5B84AF498BF /* ProcessRunner.swift */,
+				6FA7DF8F2FCF831EF0A9F303 /* ServiceIcon.swift */,
 				B43ECDB350869368D364901E /* Services.swift */,
 				340F35F3EBF585A8DA6E4F4D /* StatusIcon.swift */,
 				7E9951F01E6770D802DF8D85 /* StatusItemRenderer.swift */,
@@ -336,6 +342,7 @@
 				CFD02D8A84A16AED73241DC0 /* PKCE.swift in Sources */,
 				9207F23417E5F5E323FDBB85 /* PreviewScenario.swift in Sources */,
 				6D6DE537309ABF2AAA38CEB7 /* ProcessRunner.swift in Sources */,
+				CFF2FA60E3D46B6AFF96CFD3 /* ServiceIcon.swift in Sources */,
 				A5EAD47DE60BA7D7E0303227 /* Services.swift in Sources */,
 				461D2107B76F12BD622FAF83 /* StatusIcon.swift in Sources */,
 				79FF355F450D5F5C854FD429 /* StatusItemRenderer.swift in Sources */,
@@ -371,6 +378,7 @@
 				57ECBA428E584B97100A5610 /* OutsideClickDismisserTests.swift in Sources */,
 				E7FFC601ACE534EAAE6FB899 /* PKCETests.swift in Sources */,
 				6901F784EB889A7684051E3F /* PreviewScenarioTests.swift in Sources */,
+				5A86DB0193DB8C1E1305A175 /* ServiceIconTests.swift in Sources */,
 				936E818CBE7DAB12DF1F4B7D /* ServicesTests.swift in Sources */,
 				5A5E5861C63576583E40E4FF /* StatusIconTests.swift in Sources */,
 				B696853305DBABAFCF1EFBFD /* StatusItemRendererTests.swift in Sources */,
