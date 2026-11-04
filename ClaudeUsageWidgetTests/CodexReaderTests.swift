@@ -281,8 +281,9 @@ final class CodexReaderTests: XCTestCase {
 
     func testEmptyOrJsonForbiddenKeepsTheRefreshHint() async throws {
         try writeAuth(Self.authJSON)
-        // ChatGPT refusing a token answers with JSON, or with nothing. Only a web page says something else is in the way.
-        for body in ["", #"{"detail":"Forbidden"}"#] {
+        // ChatGPT refusing a token answers with JSON, or with nothing. Whatever parses as JSON counts, however it is laid out.
+        let bodies = ["", #"{"detail":"Forbidden"}"#, "\n  {\"detail\": \"Forbidden\"}\n", "[]"]
+        for body in bodies {
             stubUsage(status: 403, body)
 
             let state = await reader.read()
@@ -290,7 +291,7 @@ final class CodexReaderTests: XCTestCase {
             XCTAssertEqual(state, Self.refreshHint, "for a 403 with \(body.isEmpty ? "no body" : body)")
         }
 
-        // The web page rule is about 403, the status Cloudflare blocks with. A 401 keeps its hint whatever it carries.
+        // The rule is about 403, the status Cloudflare blocks with. A 401 keeps its hint whatever it carries.
         stubUsage(status: 401, "<html><body>Unauthorized</body></html>")
         let unauthorized = await reader.read()
         XCTAssertEqual(unauthorized, Self.refreshHint)
@@ -381,6 +382,21 @@ final class CodexReaderTests: XCTestCase {
 
             XCTAssertEqual(state, Self.unreachable, "for \(page)")
             XCTAssertEqual(StubURLProtocol.requests.map(\.url), [CodexReader.usageURL], "one request, no retry, for \(page)")
+        }
+    }
+
+    func testPlainText403SaysCouldntReach() async throws {
+        // Cloudflare's 1010 block is a line of plain text, not a page. It is no more ChatGPT refusing the token than a page is,
+        // so any 403 with something in it that does not parse as JSON says the same.
+        try writeAuth(Self.authJSON)
+        for body in ["error code: 1010", "Forbidden"] {
+            StubURLProtocol.requests = []
+            stubUsage(status: 403, body)
+
+            let state = await reader.read()
+
+            XCTAssertEqual(state, Self.unreachable, "for \(body)")
+            XCTAssertEqual(StubURLProtocol.requests.map(\.url), [CodexReader.usageURL], "one request, no retry, for \(body)")
         }
     }
 

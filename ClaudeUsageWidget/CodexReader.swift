@@ -88,9 +88,10 @@ final class CodexReader: ServiceReader {
         switch status {
         case 200..<300:
             break
-        case 403 where Self.isWebPage(body):
-            // Cloudflare in front of ChatGPT blocks or challenges a client it does not like with a 403 and a web page.
-            // That is not ChatGPT refusing the token, and nothing Codex does would clear it.
+        case 403 where Self.isNonJSON(body):
+            // ChatGPT refuses a token with JSON, or with nothing. A 403 with anything else in it, such as the web page
+            // Cloudflare blocks or challenges with, or its plain text "error code: 1010", comes from something in between.
+            // That is not the token being refused, and nothing Codex does would clear it.
             return .unavailable(reason: Self.unreachableReason)
         case 401, 403:
             // The token has expired or been revoked. Renewing it is Codex's job, never this reader's.
@@ -109,12 +110,10 @@ final class CodexReader: ServiceReader {
         return .reading(limits: limits, readAt: readAt)
     }
 
-    /// Whether `body` is a web page and not one of ChatGPT's JSON answers: the first thing in it that is not blank space is "<".
-    private static func isWebPage(_ body: Data) -> Bool {
-        body.first(where: { !blankSpace.contains($0) }) == UInt8(ascii: "<")
+    /// Whether `body` has something in it that does not parse as JSON. An empty body does not count.
+    private static func isNonJSON(_ body: Data) -> Bool {
+        !body.isEmpty && (try? JSONSerialization.jsonObject(with: body)) == nil
     }
-
-    private static let blankSpace: Set<UInt8> = [0x20, 0x09, 0x0A, 0x0D]
 
     /// One window as a limit, or nil when it lacks the number or the length that the label depends on.
     private static func limit(from window: RawCodexUsage.Window?, readAt: Date) -> ServiceLimit? {
