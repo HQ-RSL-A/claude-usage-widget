@@ -48,6 +48,7 @@ final class OAuthClientTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "ClaudeUsageWidget/\(AppInfo.version) (macOS)")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/json")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Cache-Control"), "no-store")
         XCTAssertEqual(body(of: request), ["grant_type": "authorization_code", "code": "CODE", "state": "ST", "client_id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e", "redirect_uri": "http://localhost:4242/callback", "code_verifier": "VER"])
     }
 
@@ -84,6 +85,7 @@ final class OAuthClientTests: XCTestCase {
         XCTAssertEqual(response.status, 200)
         XCTAssertEqual(StubURLProtocol.requests[0].url?.absoluteString, "https://api.anthropic.com/api/oauth/usage")
         XCTAssertEqual(StubURLProtocol.requests[0].value(forHTTPHeaderField: "Authorization"), "Bearer access-1")
+        XCTAssertEqual(StubURLProtocol.requests[0].value(forHTTPHeaderField: "Cache-Control"), "no-store")
         XCTAssertNoThrow(try UsageData.decode(from: response.body))
     }
 
@@ -91,6 +93,46 @@ final class OAuthClientTests: XCTestCase {
         StubURLProtocol.handler = { _ in (200, Data(Fixtures.profileJSON.utf8)) }
         let profile = try await client.profile(accessToken: "access-1")
         XCTAssertEqual(profile, Profile(email: "test@example.com", displayName: "Test", organizationName: "Test's Organization", organizationType: "claude_max"))
+    }
+
+    func test_everyRequestIsNoStore() async throws {
+        // The token request, the refresh, the usage read and the profile read all carry a token or a code. None may be kept.
+        StubURLProtocol.handler = { request in
+            switch request.url?.path {
+            case "/v1/oauth/token": return (200, Data(Fixtures.tokenResponseJSON.utf8))
+            case "/api/oauth/profile": return (200, Data(Fixtures.profileJSON.utf8))
+            default: return (200, Data(Fixtures.usageMax20xJSON.utf8))
+            }
+        }
+        _ = try await client.exchange(code: "CODE", verifier: "VER", redirectURI: "http://localhost:4242/callback", state: "ST")
+        _ = try await client.refresh("refresh-1")
+        _ = try await client.usage(accessToken: "access-1")
+        _ = try await client.profile(accessToken: "access-1")
+
+        XCTAssertEqual(StubURLProtocol.requests.compactMap { $0.url?.path },
+                       ["/v1/oauth/token", "/v1/oauth/token", "/api/oauth/usage", "/api/oauth/profile"])
+        for request in StubURLProtocol.requests {
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Cache-Control"), "no-store", "for \(request.url?.path ?? "")")
+        }
+    }
+
+    func test_defaultClientUsesTheSharedSessionThatKeepsNothingOnDisk() {
+        // URLSession.shared keeps every request's headers, the bearer token included, in ~/Library/Caches/<bundle id>/Cache.db.
+        let defaultClient = OAuthClient()
+
+        XCTAssertTrue(defaultClient.session === HTTP.session)
+        XCTAssertEqual(defaultClient.session.configuration.urlCache?.diskCapacity ?? 0, 0, "No disk cache, so no Cache.db")
+        XCTAssertEqual(defaultClient.session.configuration.timeoutIntervalForResource, 30)
+    }
+
+    func test_sharedSession_hasNoDiskCache_andGivesUpAfterThirtySeconds() {
+        let configuration = HTTP.session.configuration
+
+        XCTAssertEqual(configuration.urlCache?.diskCapacity ?? 0, 0, "No disk cache, so no Cache.db")
+        // The request timeout only counts quiet time. This one caps the whole request, so a service that never finishes
+        // cannot hold up the services read after it.
+        XCTAssertEqual(configuration.timeoutIntervalForResource, 30)
+        XCTAssertFalse(HTTP.session === URLSession.shared)
     }
 
     func test_transportFailure_throwsTransport() async {

@@ -14,6 +14,21 @@ enum OAuthConfig {
     static var userAgent: String { "ClaudeUsageWidget/\(AppInfo.version) (macOS)" }
 }
 
+// MARK: - Shared session
+
+/// The one session every client that sends a token uses. It is ephemeral: no cache, cookie or credential reaches the disk.
+/// `URLSession.shared` writes each request it makes, headers and bearer token included, into
+/// `~/Library/Caches/<bundle id>/Cache.db`, and a cache policy on the request only skips reading that cache.
+enum HTTP {
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        // A request's own timeout only counts quiet time. This one caps the whole request, so a service that never
+        // finishes cannot hold up the services read after it.
+        configuration.timeoutIntervalForResource = 30
+        return URLSession(configuration: configuration)
+    }()
+}
+
 // MARK: - TokenSet
 
 struct TokenSet: Codable, Equatable {
@@ -70,13 +85,14 @@ struct Profile: Codable, Equatable {
 // MARK: - OAuthClient
 
 /// Thin HTTP layer for the OAuth endpoints. Every request carries the beta header and an honest User-Agent
-/// (Cloudflare in front of the token endpoint rejects anonymous-looking clients).
+/// (Cloudflare in front of the token endpoint rejects anonymous-looking clients), and `Cache-Control: no-store`.
 @MainActor
 final class OAuthClient {
-    private let session: URLSession
+    /// Readable so tests can check which session a client uses when it is not given one.
+    let session: URLSession
     private let now: () -> Date
 
-    init(session: URLSession = .shared, now: @escaping () -> Date = Date.init) {
+    init(session: URLSession = HTTP.session, now: @escaping () -> Date = Date.init) {
         self.session = session
         self.now = now
     }
@@ -161,6 +177,7 @@ final class OAuthClient {
         request.setValue(OAuthConfig.betaHeader, forHTTPHeaderField: "anthropic-beta")
         request.setValue(OAuthConfig.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         request.timeoutInterval = 30
         do {
             let (data, response) = try await session.data(for: request)
