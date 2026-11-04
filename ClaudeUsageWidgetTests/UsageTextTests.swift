@@ -46,6 +46,21 @@ final class UsageTextTests: XCTestCase {
         XCTAssertNil(text.reset(bucket(resetsIn: nil)))
     }
 
+    /// The panel and the menu bar have a date, not a bucket: same words either way.
+    func test_reset_fromADate_usesTheSameWordsAsFromABucket() {
+        XCTAssertEqual(text.reset(now.addingTimeInterval(42 * 60)), "Resets in 42 min")
+        XCTAssertEqual(text.reset(now.addingTimeInterval(3 * 3600 + 9 * 60 + 30)), "Resets in 3 hr 10 min")
+        XCTAssertEqual(text.reset(date("2026-10-29T16:00:00Z"))?.replacingOccurrences(of: "\u{202F}", with: " "), "Resets Thu 4:00 PM")
+        let weekly = bucket(.weeklyAll, 0.2, resetsIn: 3 * 24 * 3600)
+        XCTAssertEqual(text.reset(weekly), text.reset(weekly.resetsAt))
+    }
+
+    func test_reset_fromADate_pastOrMissing_isNil() {
+        XCTAssertNil(text.reset(now.addingTimeInterval(-60)))
+        XCTAssertNil(text.reset(now), "a reset at this very moment is not ahead")
+        XCTAssertNil(text.reset(nil))
+    }
+
     // MARK: - Row text
 
     func test_detail_limitReached() {
@@ -79,27 +94,11 @@ final class UsageTextTests: XCTestCase {
         XCTAssertEqual(text.status(lastUpdated: nil, isFetching: false, failure: nil), "")
     }
 
-    // MARK: - Menu bar tooltip and VoiceOver
+    // MARK: - Menu bar title
 
-    func test_tooltip_listsEachLimitThenAge() {
-        let data = UsageData(buckets: [
-            bucket(.session, 0.12, resetsIn: 3 * 3600 + 10 * 60),
-            UsageBucket(kind: .weeklyAll, percentUsed: 0.74, resetsAt: date("2026-10-27T03:00:00Z"), lockedReason: nil),
-        ], extraUsage: nil, lastUpdated: now.addingTimeInterval(-2 * 60))
-        XCTAssertEqual(text.tooltip(for: data),
-                       "5hr Session: 88% left, resets in 3 hr 10 min\nWeekly: 26% left, resets in 3 hr 49 min\nUpdated 2 min ago")
-    }
-
-    func test_tooltip_noBuckets() {
-        let data = UsageData(buckets: [], extraUsage: nil, lastUpdated: now)
-        XCTAssertEqual(text.tooltip(for: data), "No usage limits reported\nUpdated just now")
-    }
-
-    func test_accessibilityValue() {
-        let both = UsageData(buckets: [bucket(.session, 0.12, resetsIn: nil), bucket(.weeklyAll, 0.74, resetsIn: nil)], extraUsage: nil)
-        XCTAssertEqual(text.accessibilityValue(for: both), "Session 88% left, week 26% left")
-        let sessionOnly = UsageData(buckets: [bucket(.session, 0.12, resetsIn: nil)], extraUsage: nil)
-        XCTAssertEqual(text.accessibilityValue(for: sessionOnly), "Session 88% left")
-        XCTAssertEqual(text.accessibilityValue(for: UsageData(buckets: [], extraUsage: nil)), "No usage limits reported")
+    func test_percentRemain() {
+        XCTAssertEqual(text.percentRemain(40), "40% remain")
+        XCTAssertEqual(text.percentRemain(100), "100% remain")
+        XCTAssertEqual(text.percentRemain(0), "0% remain")
     }
 }

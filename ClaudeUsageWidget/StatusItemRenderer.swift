@@ -4,6 +4,8 @@ import AppKit
 @MainActor
 protocol StatusItemDisplay: AnyObject {
     var image: NSImage? { get set }
+    var attributedTitle: NSAttributedString { get set }
+    var appearsDisabled: Bool { get set }
     var toolTip: String? { get set }
     func setAccessibilityValue(_ value: Any?)
 }
@@ -14,8 +16,16 @@ extension NSStatusBarButton: StatusItemDisplay {}
 /// macOS redraw the item on every display, so re-applying the same picture must cost nothing.
 @MainActor
 final class StatusItemRenderer {
+    /// What the image is made of: a new number, a dimmed item or a new tooltip does not make a new picture.
+    private struct Picture: Equatable {
+        var logo: ServiceID
+        var badge: RingColorState
+    }
+
     private let display: StatusItemDisplay
-    private var appliedIcon: StatusIconModel?
+    private var appliedPicture: Picture?
+    private var appliedTitle: String?
+    private var appliedDimmed: Bool?
     private var appliedToolTip: String?
     private var appliedAccessibilityValue: String?
 
@@ -24,9 +34,19 @@ final class StatusItemRenderer {
     }
 
     func render(_ presentation: StatusPresentation) {
-        if presentation.icon != appliedIcon {
-            display.image = StatusIcon.image(for: presentation.icon)
-            appliedIcon = presentation.icon
+        let content = presentation.content
+        let picture = Picture(logo: content.logo, badge: content.badge)
+        if picture != appliedPicture {
+            display.image = StatusIcon.image(for: content)
+            appliedPicture = picture
+        }
+        if content.title != appliedTitle {
+            display.attributedTitle = StatusIcon.attributedTitle(content.title)
+            appliedTitle = content.title
+        }
+        if content.isDimmed != appliedDimmed {
+            display.appearsDisabled = content.isDimmed
+            appliedDimmed = content.isDimmed
         }
         if presentation.toolTip != appliedToolTip {
             display.toolTip = presentation.toolTip

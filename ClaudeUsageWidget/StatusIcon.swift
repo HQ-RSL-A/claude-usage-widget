@@ -1,128 +1,84 @@
 import AppKit
 
-// MARK: - StatusIconModel
-
-/// What the menu bar item shows: one or two rings, each filled by what's used, with what's left as the number inside.
-struct StatusIconModel: Equatable {
-    enum Ring: Equatable {
-        case usage(left: Int, used: Double, color: RingColorState)
-        case noData
-    }
-
-    var rings: [Ring]
-    /// Signed out, no numbers yet, or numbers too old to trust.
-    var isDimmed: Bool
-
-    /// A template image is tinted by the system like every other menu bar icon; amber and red must keep their color.
-    var isTemplate: Bool {
-        !rings.contains { ring in
-            if case .usage(_, _, let color) = ring { return color != .normal }
-            return false
-        }
-    }
-}
-
-// MARK: - StatusIcon
-
-/// Draws a StatusIconModel for the status item. Sizes are in points. The width depends only on how many
-/// rings there are, never on the numbers, so the menu bar never shifts as usage changes.
+/// Draws the menu bar item's picture and fixes its size. The picture is the service's mark; a badge dot on it
+/// turns amber or red when that limit is running low. The title beside it is the menu bar's own text.
 enum StatusIcon {
-    static let slot: CGFloat = 20
-    static let gap: CGFloat = 3
-    static let radius: CGFloat = 8.6
-    static let stroke: CGFloat = 2.0
-    static let trackAlpha: CGFloat = 0.25
-    static let dimmedAlpha: CGFloat = 0.45
+    /// The room the item keeps: between the mark and the title, and around the two of them.
+    private static let titleGap: CGFloat = 4
+    private static let sidePadding: CGFloat = 12
+    /// The longest title there is, so the item is wide enough for every number.
+    private static let widestTitle = "100% remain"
 
-    static func size(for model: StatusIconModel) -> NSSize {
-        let count = CGFloat(max(1, model.rings.count))
-        return NSSize(width: count * slot + (count - 1) * gap, height: slot)
+    private static let badgeDiameter: CGFloat = 6
+    private static let badgeCenter = CGPoint(x: 13, y: 13)   // in the 16 pt mark, counted from the bottom left
+    private static let badgeClearance: CGFloat = 1.5         // the ring cut clear around the dot
+
+    // MARK: - Size and font
+
+    /// The menu bar's own size, with every digit the same width so the number never jiggles as it changes.
+    static func titleFont() -> NSFont {
+        .monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)
     }
 
-    /// When the image cannot be a template (any ring amber or red), normal parts take the menu bar's color,
-    /// picked while drawing: macOS draws the item once per display, each in that menu bar's appearance,
-    /// so one image is right everywhere and nothing has to watch the appearance.
-    static func image(for model: StatusIconModel) -> NSImage {
-        let image = NSImage(size: size(for: model), flipped: false) { _ in
-            let foreground = foregroundColor(isTemplate: model.isTemplate, appearance: NSAppearance.currentDrawing())
-            for (index, ring) in model.rings.enumerated() {
-                let center = CGPoint(x: slot / 2 + CGFloat(index) * (slot + gap), y: slot / 2)
-                draw(ring, at: center, foreground: foreground, dimmed: model.isDimmed)
-            }
+    /// One width for every title, so the menu bar never shifts as the numbers change.
+    static func itemLength() -> CGFloat {
+        ceil(ServiceIcon.menuBarSize.width + titleGap + widestTitleWidth() + sidePadding)
+    }
+
+    /// The title in the menu bar's font, and no color: the menu bar colors its own text. The status button centers
+    /// what it holds, so a shorter title would slide the logo and the number along with it. Digit wide spaces after
+    /// the title make every title as wide as the widest; with the button's text aligned left, the logo and the
+    /// number then start in the same place whatever is shown.
+    static func attributedTitle(_ title: String) -> NSAttributedString {
+        let font = titleFont()
+        let shortfall = widestTitleWidth() - NSAttributedString(string: title, attributes: [.font: font]).size().width
+        let digitWidth = NSAttributedString(string: "0", attributes: [.font: font]).size().width
+        let padding = String(repeating: "\u{2007}", count: max(0, Int((shortfall / digitWidth).rounded())))   // figure space
+        return NSAttributedString(string: title + padding, attributes: [.font: font])
+    }
+
+    private static func widestTitleWidth() -> CGFloat {
+        NSAttributedString(string: widestTitle, attributes: [.font: titleFont()]).size().width
+    }
+
+    // MARK: - Image
+
+    /// The service's mark. With no badge it is the plain template, tinted by the system like every other menu bar
+    /// icon. A colored dot cannot be tinted, so with a badge the image is not a template: its mark takes the menu
+    /// bar's color, picked while drawing. macOS draws the item once per display, each in that menu bar's
+    /// appearance, so one image is right everywhere and nothing has to watch the appearance.
+    static func image(for content: StatusItemContent) -> NSImage {
+        let mark = ServiceIcon.menuBarMark(for: content.logo)
+        guard content.badge != .normal else { return mark }
+
+        let image = NSImage(size: ServiceIcon.menuBarSize, flipped: false) { bounds in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            let foreground = foregroundColor(for: NSAppearance.currentDrawing())
+            let dot = CGRect(x: badgeCenter.x - badgeDiameter / 2, y: badgeCenter.y - badgeDiameter / 2, width: badgeDiameter, height: badgeDiameter)
+
+            // The mark in the menu bar's color, with the ring around the dot cut out of it. Done in a layer of its
+            // own, so the color lands on the glyph only and the cut takes nothing but the glyph.
+            context.beginTransparencyLayer(in: bounds, auxiliaryInfo: nil)
+            mark.draw(in: bounds)
+            foreground.setFill()
+            bounds.fill(using: .sourceAtop)
+            context.saveGState()
+            context.setBlendMode(.clear)
+            context.fillEllipse(in: dot.insetBy(dx: -badgeClearance, dy: -badgeClearance))
+            context.restoreGState()
+            context.endTransparencyLayer()
+
+            color(for: content.badge, foreground: foreground).setFill()
+            NSBezierPath(ovalIn: dot).fill()
             return true
         }
-        image.isTemplate = model.isTemplate
         image.cacheMode = .never   // a cached drawing would carry one display's color onto the other
         return image
     }
 
-    /// A template is tinted by the system, so it is drawn black; otherwise white on a dark menu bar, black on a light one.
-    private static func foregroundColor(isTemplate: Bool, appearance: NSAppearance) -> NSColor {
-        guard !isTemplate else { return .black }
-        return appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
-    }
-
-    // MARK: - Drawing
-
-    private static func draw(_ ring: StatusIconModel.Ring, at center: CGPoint, foreground: NSColor, dimmed: Bool) {
-        switch ring {
-        case .noData:
-            strokeCircle(at: center, color: foreground.withAlphaComponent(trackAlpha))
-            let dash = NSBezierPath()
-            dash.move(to: CGPoint(x: center.x - 2.5, y: center.y))
-            dash.line(to: CGPoint(x: center.x + 2.5, y: center.y))
-            dash.lineWidth = 1.6
-            dash.lineCapStyle = .round
-            foreground.withAlphaComponent(dimmedAlpha).setStroke()
-            dash.stroke()
-
-        case .usage(let left, let used, let state):
-            let alpha: CGFloat = dimmed ? dimmedAlpha : 1
-            // Readable on any wallpaper: the number and the track keep the menu bar's own color,
-            // and only the arc turns amber or red.
-            strokeCircle(at: center, color: foreground.withAlphaComponent(alpha * trackAlpha))
-            strokeArc(at: center, fraction: used, color: color(for: state, foreground: foreground).withAlphaComponent(alpha))
-            drawNumber(left, at: center, color: foreground.withAlphaComponent(alpha))
-        }
-    }
-
-    private static func strokeCircle(at center: CGPoint, color: NSColor) {
-        let track = NSBezierPath()
-        track.appendArc(withCenter: center, radius: radius, startAngle: 90, endAngle: 90 - 360, clockwise: true)
-        track.lineWidth = stroke
-        color.setStroke()
-        track.stroke()
-    }
-
-    /// Clockwise from 12 o'clock. NSBezierPath angles run counter-clockwise from 3 o'clock.
-    private static func strokeArc(at center: CGPoint, fraction: Double, color: NSColor) {
-        let clamped = min(max(fraction, 0), 1)
-        guard clamped > 0 else { return }
-        let arc = NSBezierPath()
-        arc.appendArc(withCenter: center, radius: radius, startAngle: 90, endAngle: 90 - clamped * 360, clockwise: true)
-        arc.lineWidth = stroke
-        arc.lineCapStyle = .round
-        color.setStroke()
-        arc.stroke()
-    }
-
-    private static func drawNumber(_ value: Int, at center: CGPoint, color: NSColor) {
-        let digits = String(value)
-        // "100", the start of every session, is the widest: smaller and a little tighter so it clears the track.
-        let isWide = digits.count >= 3
-        let font = numberFont(size: isWide ? 6.8 : 9)
-        let text = NSMutableAttributedString(string: digits, attributes: [.font: font, .foregroundColor: color])
-        if isWide { text.addAttribute(.kern, value: -0.25, range: NSRange(location: 0, length: digits.count - 1)) }
-        // Center the digits' cap height on the ring; draw(at:) takes the bottom of the line, below the baseline.
-        let baseline = center.y - font.capHeight / 2
-        text.draw(at: CGPoint(x: center.x - text.size().width / 2, y: baseline + font.descender))
-    }
-
-    /// Proportional digits (the system default): the ring is a fixed size, so nothing shifts as numbers change.
-    private static func numberFont(size: CGFloat) -> NSFont {
-        let base = NSFont.systemFont(ofSize: size, weight: .bold)
-        guard let rounded = base.fontDescriptor.withDesign(.rounded) else { return base }
-        return NSFont(descriptor: rounded, size: size) ?? base
+    /// White on a dark menu bar, black on a light one.
+    private static func foregroundColor(for appearance: NSAppearance) -> NSColor {
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
     }
 
     static func color(for state: RingColorState, foreground: NSColor) -> NSColor {
