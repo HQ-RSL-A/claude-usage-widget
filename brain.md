@@ -13,7 +13,8 @@ claude-usage-widget/
     CallbackServer.swift        # NWListener on 127.0.0.1, one GET /callback?code=&state=, 5-minute window
     PKCE.swift                  # RFC 7636 verifier/challenge, random state, base64url
     TokenStore.swift            # TokenStoring, KeychainTokenStore (service io.rsla.ClaudeUsageWidget), KeychainItem helpers
-    ClaudeCodeCredentials.swift # Read-only view of Claude Code's Keychain item ("Claude Code-credentials")
+    ClaudeCodeCredentials.swift # Read-only view of Claude Code's Keychain item ("Claude Code-credentials"), read through /usr/bin/security
+    ProcessRunner.swift         # Runs a command-line tool off the main thread with a timeout (used for /usr/bin/security)
     UsageSource.swift           # IdentitySource, UsageSource, bearer token providers (own token refreshes; Claude Code's never)
     UsageService.swift          # 5-minute polling of one UsageSource, one fetch at a time, extra fetch 10 s after a reset, expiry detection
     WebSessionAuth.swift        # v0.3.0 web-session state machine (claude.ai cookies), owns LoginWindowController
@@ -23,7 +24,8 @@ claude-usage-widget/
     Models.swift                # BucketKind, UsageBucket (percentLeft), ExtraUsage, UsageData (+ decode, weekBucket, nextReset), RingColorState, MenuBarLayout
     UsageText.swift             # Usage in plain words: reset text, status line, tooltip, VoiceOver value (clock injected)
     StatusPresentation.swift    # (auth state, data, layout, time) -> rings + tooltip + VoiceOver value; stale after 15 min
-    StatusIcon.swift            # StatusIconModel and its Core Graphics drawing for the status item
+    StatusIcon.swift            # StatusIconModel and its Core Graphics drawing for the status item (light or dark picked while drawing)
+    StatusItemRenderer.swift    # Applies a StatusPresentation to the status button, only what changed
     OpenAtLogin.swift           # SMAppService.mainApp behind a protocol
     PreviewScenario.swift       # -previewUsage <scenario>: made-up numbers, no sign-in
     OutsideClickDismisser.swift # Closes the popover on a click outside it (global mouse monitor)
@@ -45,11 +47,13 @@ claude-usage-widget/
 - **Never refresh Claude Code's token** - rotating it would break Claude Code; the widget re-reads the current access token on every poll
 - **Honest User-Agent** - Cloudflare rejects only anonymous-looking clients (Python's default); `ClaudeUsageWidget/<version> (macOS)` passes
 - **Keychain denial remembered** - `claudeCodeTokenDenied` in UserDefaults, cleared only by "Use Claude Code's sign-in"; existence is probed with an attribute-only query that never prompts
+- **Claude Code's token read through `/usr/bin/security`** (v0.5.1) - Claude Code writes its item with that tool, so the item trusts it and macOS never asks for the Mac password. Reading it with SecItem asked at every launch: each Claude Code token refresh rewrites the item and resets its partition list to `apple-tool:`, dropping "Always Allow" for every other app, and each update of this ad-hoc signed app has a new cdhash. `find-generic-password -s "Claude Code-credentials" -w`, 10 s timeout, exit 44 = not found, any other failure counts as denied
 - **Web session kept one release** - the borrowed OAuth client id could be blocked; the embedded login still works
 - **JS bridge over URLSession for the web session** - claude.ai's bot protection tends to reject non-browser clients
 - **Outside click closes the popover** (v0.4.2) - `.transient` alone does not do it for a menu bar app, because the app is never active and AppKit never sees the dismissing click. `OutsideClickDismisser` arms a global mouse-down monitor in `popoverDidShow` and disarms it in `popoverDidClose`. Global monitors never see this app's own clicks, so the popover's controls and the status item behave as before
 - **Both limits in the menu bar** (v0.5.0) - two rings, session left and week right, each with what's left inside (`100 - round(used %)`, so it adds up with claude.ai's "% used"). The arc fills with what's used. Rahul asked for rotating numbers; both at once won (no waiting, no motion). A missing bucket keeps its slot as a dimmed dash so the width never changes
-- **Readable on any wallpaper** (v0.5.0, Rahul) - digits and tracks use the menu bar's color, only arcs are amber or red. All-normal rings render as a template image; once an arc is colored the image is not a template, so normal parts are drawn white or black from the button's `effectiveAppearance` (observed with KVO)
+- **Readable on any wallpaper** (v0.5.0, Rahul) - digits and tracks use the menu bar's color, only arcs are amber or red. All-normal rings render as a template image; once an arc is colored the image is not a template, so normal parts are drawn white or black from `NSAppearance.currentDrawing()` inside the drawing handler (`cacheMode = .never`). macOS draws the item once per display in that menu bar's appearance, so one image is right on every display
+- **Nothing observes the appearance; the status item changes only when its content does** (v0.5.1) - v0.5.0 re-set the image whenever the button's `effectiveAppearance` changed, but macOS sets that appearance on every redraw of every display's copy (`_redrawReplicantSnapshot` -> `setAppearance:`), so the image was re-set forever: 80 to 87% CPU, WindowServer at 40%+, flagged by the battery menu. `StatusItemRenderer` applies image, tooltip and VoiceOver value only when each changed
 - **Never stale at full strength** - the menu bar re-renders every 60 s; numbers older than 15 min dim; fetch 10 s after the earliest reset and on wake from sleep
 - **No keyboard shortcuts in the popover** - the app never activates, so key presses go to the app in front; activating on open would steal focus at every glance
 - **Core Graphics drawing**, **5-minute polling**, **main actor everywhere**, **`main.swift` detects XCTest**, **version from `project.yml`** (unchanged since v0.3.0)
@@ -58,7 +62,7 @@ claude-usage-widget/
 
 `AuthState`: `unknown` -> `unreachable` | `signedOut(claudeCodeAvailable)` | `signingIn` | `signedIn(IdentitySource, Profile?)` | `sessionExpired(IdentitySource)` | `noChatOrg`.
 
-1. Launch: `AuthManager.checkAuthStatus()` probes whether Claude Code's Keychain item exists (no prompt), then tries, in order: own token (`KeychainTokenStore`; refreshed if within 5 minutes of expiry; a refused refresh clears it), Claude Code's token (one consent prompt the first time; `isValid` means more than a minute left), the web session (only if `webSessionEnabled`, which is set automatically when v0.3.0 cookies exist). Nothing -> `signedOut`
+1. Launch: `AuthManager.checkAuthStatus()` probes whether Claude Code's Keychain item exists (no prompt), then tries, in order: own token (`KeychainTokenStore`; refreshed if within 5 minutes of expiry; a refused refresh clears it), Claude Code's token (read through `/usr/bin/security`, no prompt; `isValid` means more than a minute left), the web session (only if `webSessionEnabled`, which is set automatically when v0.3.0 cookies exist). Nothing -> `signedOut`
 2. Browser sign-in: PKCE + state, `CallbackServer` on a free localhost port, authorize URL opened in the default browser, one `GET /callback`, code exchanged at the token endpoint, `TokenSet` saved, then `checkAuthStatus()` again. Cancel or 5-minute timeout -> `signedOut` with `signInMessage`
 3. Polling: `OAuthUsageSource` asks the provider for a bearer token (own token refreshed when due), one 401 triggers one refresh and one retry, a second 401 is expiry. `UsageService` stops and `AuthManager.sessionDidExpire()` maps to `sessionExpired(source)` (own token cleared)
 4. Sign Out: own token deleted, `claudeCodeTokenOptOut` set, web session wiped if it was enabled, state `signedOut`
@@ -76,7 +80,7 @@ claude-usage-widget/
 - Usage: `GET https://api.anthropic.com/api/oauth/usage` (Bearer) -> same shape as the web endpoint (`five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`, `extra_usage`, codenamed nulls, plus a `limits` array); 401 without a valid token
 - Profile: `GET https://api.anthropic.com/api/oauth/profile` -> `{account: {email, display_name, full_name, has_claude_max, has_claude_pro}, organization: {name, organization_type, rate_limit_tier, ...}}`
 - Headers on every request: `anthropic-beta: oauth-2025-04-20`, `User-Agent: ClaudeUsageWidget/<version> (macOS)`, `Accept: application/json`
-- Claude Code's Keychain item: generic password, service `Claude Code-credentials`, JSON `{claudeAiOauth: {accessToken, refreshToken, expiresAt (ms since epoch), refreshTokenExpiresAt, scopes, subscriptionType, rateLimitTier}}`
+- Claude Code's Keychain item: generic password, service `Claude Code-credentials`, JSON `{claudeAiOauth: {accessToken, refreshToken, expiresAt (ms since epoch), refreshTokenExpiresAt, scopes, subscriptionType, rateLimitTier}}`. Its access list (checked 2026-11-04 with `security dump-keychain -a`, no secrets): decrypt trusts `/usr/bin/security` only (old widget cdhashes linger but fail), partition list `apple-tool:`. Claude Code rewrites it in place on every token refresh (creation date kept, modification date moves)
 
 ## Web session API (v0.3.0 fallback, verified 2026-10-12)
 
@@ -94,10 +98,10 @@ Layouts: Session and Week (default, 43 x 20 pt image), Session Only or Week Only
 
 ## Testing
 
-- `xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO` (199 tests as of v0.5.0); CI runs the same on every push to `main`. The version tests pin `MARKETING_VERSION`: bump them with `project.yml`
+- `xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO` (214 tests as of v0.5.1); CI runs the same on every push to `main`. The version tests pin `MARKETING_VERSION`: bump them with `project.yml`
 - **Preview mode:** `open -n ClaudeUsageWidget.app --args -previewUsage amber` (also `normal`, `critical`, `limit`, `stale`, `signedOut`) shows made-up numbers in the real menu bar with no sign-in, Keychain or WebKit, so a fresh build raises no Keychain prompt. It shares the installed app's preferences (`menuBarShows`), so quit the installed copy first and reopen it after
 - System Events reads the item: `help` is the tooltip, `description` the VoiceOver label; while open, the popover is an `AXPopover` child of the menu bar item
-- `StubURLProtocol` answers OAuth requests; `FakeClaudeAPI` scripts web-session responses; `FakeCallbackServer`, `InMemoryTokenStore`, `FakeClaudeCodeCredentials` drive the coordinator; `CallbackServerTests` make real localhost requests; one Keychain round trip runs under `io.rsla.ClaudeUsageWidget.tests`
+- `StubURLProtocol` answers OAuth requests; `FakeClaudeAPI` scripts web-session responses; `FakeCallbackServer`, `InMemoryTokenStore`, `FakeClaudeCodeCredentials` drive the coordinator; `CallbackServerTests` make real localhost requests; one Keychain round trip runs under `io.rsla.ClaudeUsageWidget.tests`, one `/usr/bin/security` round trip under `io.rsla.ClaudeUsageWidget.tests.claudecode`; `FakeProcessRunner` scripts the tool's endings
 - The popover can be driven for real through Accessibility: press the status item with `AXPress`, post a `CGEvent` click on an empty stretch of the menu bar, count the app's on-screen windows taller than the status item. That check failed on v0.4.1 and passes on v0.4.2
 - Manual pass before a release: Claude Code route, browser route with Google, cancel, forced refresh, upgrade path (plan Task 9)
 

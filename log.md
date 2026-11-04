@@ -2,6 +2,27 @@
 
 Newest entry on top.
 
+## 2026-11-04 12:23 PT
+
+v0.5.1 on branch `fix/battery-keychain`, not merged, not pushed, not tagged; installed in `/Applications` on Rahul's Mac. Rahul: the widget "drains battery a lot and gets flagged by Mac's battery app almost always", and "Everytime I quit the app, it requires me log in again by entering my Mac password".
+
+Battery: a 3 s `sample` of v0.5.0 showed an endless redraw loop. macOS redraws the status item's copy on each display and sets the button's appearance before every redraw (`_redrawReplicantSnapshot` -> `setAppearance:`); the `effectiveAppearance` KVO observer answered by setting a new image, which queued the next redraw. Measured on v0.5.0: widget 79 to 87% CPU, WindowServer 38 to 47%, MenuBarAgent 12%. Fix: no appearance observer; the image picks white or black while it is drawn (`NSAppearance.currentDrawing()`, `cacheMode = .never`), so each display gets its own color from one image; `StatusItemRenderer` sets image, tooltip and VoiceOver value only when each changed. Measured on v0.5.1: widget 0.0% CPU, 1 idle wakeup per sample, WindowServer 17%, MenuBarAgent no longer in the top list; a 3 s sample shows the main thread idle in the run loop, no `_updateReplicants`.
+
+Password prompt: Claude Code's Keychain item trusts only `/usr/bin/security` (it writes the item with that tool), and every Claude Code token refresh rewrites the item and resets its partition list to `apple-tool:`, so "Always Allow" never stuck for the widget (the item had been rewritten at 11:32 that morning; two stale widget cdhashes sat in its access list). Fix: the widget reads the item through `/usr/bin/security find-generic-password -w` (`SecurityToolClaudeCodeCredentials`, `ProcessRunner`, 10 s timeout, exit 44 = not found, other failures count as denied). `read()` is async now. Verified: two launches of the installed v0.5.1 with Claude Code's sign-in, no SecurityAgent process for 15 to 20 s after either, tooltip showing real numbers ("Weekly (all models): 89% left").
+
+Checked on the real menu bar: the icon looks as before; preview `amber` (real widget quit for it, then reopened) drew white digits and an amber arc on both displays' menu bars (Odyssey and built-in), 0.0% CPU. 214 tests (15 new: one image drawn in dark then light, cache mode, renderer applies only changes, reader exit codes and timeout with a fake runner, a real `/usr/bin/security` round trip under `io.rsla.ClaudeUsageWidget.tests.claudecode`, the runner's timeout and launch failure); the appearance test and the renderer tests fail against the old behavior (mutation check). Not verified: a light menu bar on the real Mac (both of Rahul's were dark; pixel-tested both ways); whether Open at Login survived replacing the app bundle (not checked: `sfltool dumpbtm` asks for admin).
+
+## 2026-10-27 00:58 PT
+
+Session wrap. State: `main` is at v0.5.0 (`c7f0a6b`), GitHub has one branch, one tag and one release. Rahul's Mac runs v0.5.0 from `/Applications` (the local Release build of the tagged commit) with Open at Login on. Since the entry below: HQ-116 (Apple Developer Program) closed at Rahul's word, not worth $99 a year while he is the main user, which leaves nothing on his list for this app.
+
+Next steps for whoever picks this up cold:
+- Open follow-ups are Linear issues: HQ-142 (deferred review notes, now including v0.5.0's five minors and what was never verified), HQ-143 (v0.6.0, remove the embedded login), HQ-118 (80% notification).
+- The first time the widget sees an idle session (no messages for 5+ hours), record whether the endpoint sends `utilization: 0` or null; the spec says why it matters (a dash instead of 100).
+- Every update changes the ad-hoc signature, so the first launch after one asks once to read Claude Code's sign-in.
+- Check UI on the real menu bar with preview mode (`brain.md` Testing): quit his installed copy first, reopen it after, and never click by screen position while he is using the Mac.
+- When a release ships, delete the previous one (rule in `CLAUDE.md`).
+
 ## 2026-10-27 00:32 PT
 
 v0.5.0 released: https://github.com/HQ-RSL-A/claude-usage-widget/releases/tag/v0.5.0 (merge `6f8a8b6`, tag `v0.5.0`; CI tests and the DMG build green; DMG 472,599 bytes). Rahul said "merge to main and deploy and make sure my mac app is up to date". Before the tag: the Release build from `main` (CI's signing flags) replaced v0.4.2 in `/Applications`, Rahul allowed the Keychain prompt for Claude Code's sign-in, and the menu bar showed his real numbers (67 and 20 left, tooltip with both reset times); he ticked Open at Login on it (no beep, no Settings pane, so macOS accepted it). The released DMG was downloaded, checked (0.5.0, icon present, ad-hoc linker signature) and opened in preview mode beside the installed app, then closed. His installed copy is the local build of the tagged commit, kept to avoid a second Keychain prompt. HQ-114 and HQ-119 closed; HQ-143 renamed to v0.6.0; the review's deferred minors are a comment on HQ-142. Then, at Rahul's word ("Delete it, and always do this"), the v0.4.2 release, its DMG and its tag were deleted (v0.4.2 pointed at `b21133b11e9d`); GitHub has one branch, one tag and one release again, and deleting the previous release is now a standing rule in `CLAUDE.md`.
