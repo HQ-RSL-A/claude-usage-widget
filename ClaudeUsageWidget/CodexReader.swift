@@ -3,8 +3,9 @@ import Foundation
 /// Reads Codex's 5 hour and weekly usage from ChatGPT's usage endpoint, with the sign-in Codex saved on this Mac.
 ///
 /// Codex owns `auth.json` and rewrites it whenever it renews its token. This reader only reads it, fresh on every
-/// call: it never refreshes the token, never writes the file, never stores the token and never logs it. When the
-/// token has expired the panel says so, and Codex renews it the next time it runs.
+/// call: it never refreshes the token, never writes the file, never stores the token and never logs it. Its session
+/// (`HTTP.session`) keeps nothing on disk, so the token is never cached in the app's `Cache.db`. When the token has
+/// expired the panel says so, and Codex renews it the next time it runs.
 @MainActor
 final class CodexReader: ServiceReader {
     let service = ServiceID.codex
@@ -34,10 +35,11 @@ final class CodexReader: ServiceReader {
     private static let sessionWindowSeconds = 6.0 * 3600
 
     private let authFile: URL
-    private let session: URLSession
+    /// Readable so tests can check which session a reader uses when it is not given one.
+    let session: URLSession
     private let now: () -> Date
 
-    init(authFile: URL = CodexReader.defaultAuthFile, session: URLSession = .shared, now: @escaping () -> Date = Date.init) {
+    init(authFile: URL = CodexReader.defaultAuthFile, session: URLSession = HTTP.session, now: @escaping () -> Date = Date.init) {
         self.authFile = authFile
         self.session = session
         self.now = now
@@ -71,6 +73,7 @@ final class CodexReader: ServiceReader {
         }
         request.setValue(OAuthConfig.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
 
         let body: Data
         let status: Int
@@ -85,6 +88,10 @@ final class CodexReader: ServiceReader {
         switch status {
         case 200..<300:
             break
+        case 403 where Self.isWebPage(body):
+            // Cloudflare in front of ChatGPT blocks or challenges a client it does not like with a 403 and a web page.
+            // That is not ChatGPT refusing the token, and nothing Codex does would clear it.
+            return .unavailable(reason: Self.unreachableReason)
         case 401, 403:
             // The token has expired or been revoked. Renewing it is Codex's job, never this reader's.
             return .notSignedIn(hint: Self.refreshHint)
@@ -101,6 +108,13 @@ final class CodexReader: ServiceReader {
         guard !limits.isEmpty else { return .unavailable(reason: Self.formatChangedReason) }
         return .reading(limits: limits, readAt: readAt)
     }
+
+    /// Whether `body` is a web page and not one of ChatGPT's JSON answers: the first thing in it that is not blank space is "<".
+    private static func isWebPage(_ body: Data) -> Bool {
+        body.first(where: { !blankSpace.contains($0) }) == UInt8(ascii: "<")
+    }
+
+    private static let blankSpace: Set<UInt8> = [0x20, 0x09, 0x0A, 0x0D]
 
     /// One window as a limit, or nil when it lacks the number or the length that the label depends on.
     private static func limit(from window: RawCodexUsage.Window?, readAt: Date) -> ServiceLimit? {

@@ -122,6 +122,18 @@ final class CodexReaderTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/json")
         XCTAssertEqual(request.timeoutInterval, 15)
         XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData, "A cached answer would show old numbers as current")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Cache-Control"), "no-store", "Nothing that carries the token is kept")
+    }
+
+    func testDefaultSessionIsTheSharedOneThatKeepsNothingOnDisk() {
+        // A reader made without a session of its own must not fall back to URLSession.shared: its disk cache keeps every
+        // request's headers, the token included, in the app's Cache.db. Nothing is sent here, the reader is only made.
+        let codex = CodexReader(authFile: authFile)
+
+        XCTAssertTrue(codex.session === HTTP.session)
+        XCTAssertEqual(codex.session.configuration.urlCache?.diskCapacity ?? 0, 0, "No disk cache, so no Cache.db")
+        // The poller reads one service after another, so a request that never ends would hold up the rest.
+        XCTAssertEqual(codex.session.configuration.timeoutIntervalForResource, 30)
     }
 
     func testAccountHeaderIsLeftOutWithoutAnAccountId() async throws {
@@ -267,6 +279,23 @@ final class CodexReaderTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["auth.json"])
     }
 
+    func testEmptyOrJsonForbiddenKeepsTheRefreshHint() async throws {
+        try writeAuth(Self.authJSON)
+        // ChatGPT refusing a token answers with JSON, or with nothing. Only a web page says something else is in the way.
+        for body in ["", #"{"detail":"Forbidden"}"#] {
+            stubUsage(status: 403, body)
+
+            let state = await reader.read()
+
+            XCTAssertEqual(state, Self.refreshHint, "for a 403 with \(body.isEmpty ? "no body" : body)")
+        }
+
+        // The web page rule is about 403, the status Cloudflare blocks with. A 401 keeps its hint whatever it carries.
+        stubUsage(status: 401, "<html><body>Unauthorized</body></html>")
+        let unauthorized = await reader.read()
+        XCTAssertEqual(unauthorized, Self.refreshHint)
+    }
+
     func testApiKeyOnlyAuth() async throws {
         stubUsage()
         let auths = [
@@ -332,6 +361,26 @@ final class CodexReaderTests: XCTestCase {
             let state = await reader.read()
 
             XCTAssertEqual(state, Self.unreachable, "for \(status)")
+        }
+    }
+
+    func testHtml403SaysCouldntReach() async throws {
+        // Cloudflare answers a client it blocks or challenges with a 403 and a web page. That is not ChatGPT refusing the
+        // token, so there is nothing for Codex to refresh, and "Open Codex to refresh its sign-in" would never go away.
+        try writeAuth(Self.authJSON)
+        let pages = [
+            "<!DOCTYPE html><html><head><title>Just a moment...</title></head><body></body></html>",
+            "<html><body>Access denied</body></html>",
+            "\r\n  <!DOCTYPE html><html></html>",   // a page that starts with blank space is still a page
+        ]
+        for page in pages {
+            StubURLProtocol.requests = []
+            stubUsage(status: 403, page)
+
+            let state = await reader.read()
+
+            XCTAssertEqual(state, Self.unreachable, "for \(page)")
+            XCTAssertEqual(StubURLProtocol.requests.map(\.url), [CodexReader.usageURL], "one request, no retry, for \(page)")
         }
     }
 
