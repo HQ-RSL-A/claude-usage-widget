@@ -55,9 +55,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Setup
 
     private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: StatusIcon.itemLength())   // one width for every title
         guard let button = statusItem.button else { return }
         button.imageScaling = .scaleProportionallyDown
+        button.imagePosition = .imageLeading
+        button.alignment = .left   // with the padded title (StatusIcon.attributedTitle), the logo and the number never move
+        button.font = StatusIcon.titleFont()
         button.action = #selector(togglePopover)
         button.target = self
         button.setAccessibilityLabel("Claude Usage")
@@ -110,7 +113,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func renderStatusItem() {
         guard let statusRenderer else { return }
         let data = preview != nil ? previewData : usageService?.lastData
-        statusRenderer.render(StatusPresentation.make(state: authState, data: data, layout: MenuBarLayout.load(from: .standard), text: UsageText()))
+        statusRenderer.render(StatusPresentation.make(services: [.claude: .claude(state: authState, data: data)], visible: [.claude], choice: .lowest, text: UsageText()))
     }
 
     // MARK: - Popover Toggle
