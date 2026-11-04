@@ -87,7 +87,7 @@ final class UsageTextTests: XCTestCase {
             UsageBucket(kind: .weeklyAll, percentUsed: 0.74, resetsAt: date("2026-10-27T03:00:00Z"), lockedReason: nil),
         ], extraUsage: nil, lastUpdated: now.addingTimeInterval(-2 * 60))
         XCTAssertEqual(text.tooltip(for: data),
-                       "Current session: 88% left, resets in 3 hr 10 min\nWeekly (all models): 26% left, resets in 3 hr 49 min\nUpdated 2 min ago")
+                       "5hr Session: 88% left, resets in 3 hr 10 min\nWeekly: 26% left, resets in 3 hr 49 min\nUpdated 2 min ago")
     }
 
     func test_tooltip_noBuckets() {

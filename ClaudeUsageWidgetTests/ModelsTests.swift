@@ -101,8 +101,8 @@ final class ModelsTests: XCTestCase {
     }
 
     func test_bucketKind_labelsAndWeeklyFlag() {
-        XCTAssertEqual(BucketKind.session.label, "Current session")
-        XCTAssertEqual(BucketKind.weeklyAll.label, "Weekly (all models)")
+        XCTAssertEqual(BucketKind.session.label, "5hr Session")
+        XCTAssertEqual(BucketKind.weeklyAll.label, "Weekly")
         XCTAssertEqual(BucketKind.weeklyOpus.label, "Weekly (Opus)")
         XCTAssertEqual(BucketKind.weeklySonnet.label, "Weekly (Sonnet)")
         XCTAssertFalse(BucketKind.session.isWeekly)

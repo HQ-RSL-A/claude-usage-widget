@@ -64,8 +64,8 @@ public enum BucketKind: String, CaseIterable {
 
     public var label: String {
         switch self {
-        case .session: return "Current session"
-        case .weeklyAll: return "Weekly (all models)"
+        case .session: return "5hr Session"
+        case .weeklyAll: return "Weekly"
         case .weeklyOpus: return "Weekly (Opus)"
         case .weeklySonnet: return "Weekly (Sonnet)"
         }
