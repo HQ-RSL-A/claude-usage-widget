@@ -14,7 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var usageService: UsageService?
     private var outsideClick: OutsideClickDismisser!
     private let openAtLogin = OpenAtLogin()
-    private var appearanceObservation: NSKeyValueObservation?
+    private var statusRenderer: StatusItemRenderer?
     private var statusTimer: Timer?
     private var authState: AuthState = .unknown
 
@@ -38,7 +38,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         authManager = AuthManager(dependencies: .init(
             oauth: OAuthClient(),
             tokenStore: KeychainTokenStore(),
-            claudeCode: KeychainClaudeCodeCredentials(),
+            claudeCode: SecurityToolClaudeCodeCredentials(),
             webSession: WebSessionAuth(client: client),
             defaults: .standard,
             makeCallbackServer: { CallbackServer() },
@@ -61,10 +61,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         button.action = #selector(togglePopover)
         button.target = self
         button.setAccessibilityLabel("Claude Usage")
-        // The menu bar turns light or dark with the wallpaper; a non-template image has to follow it.
-        appearanceObservation = button.observe(\.effectiveAppearance) { [weak self] _, _ in
-            Task { @MainActor in self?.renderStatusItem() }
-        }
+        // No appearance observer: the image picks light or dark while it is drawn (StatusIcon). Re-setting it
+        // on appearance changes was an endless loop, because macOS sets the appearance on every redraw.
+        statusRenderer = StatusItemRenderer(display: button)
         renderStatusItem()
     }
 
@@ -109,13 +108,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Status Item
 
     private func renderStatusItem() {
-        guard let button = statusItem?.button else { return }
+        guard let statusRenderer else { return }
         let data = preview != nil ? previewData : usageService?.lastData
-        let presentation = StatusPresentation.make(state: authState, data: data, layout: MenuBarLayout.load(from: .standard), text: UsageText())
-        let isDark = button.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        button.image = StatusIcon.image(for: presentation.icon, darkMenuBar: isDark)
-        button.toolTip = presentation.toolTip
-        button.setAccessibilityValue(presentation.accessibilityValue)
+        statusRenderer.render(StatusPresentation.make(state: authState, data: data, layout: MenuBarLayout.load(from: .standard), text: UsageText()))
     }
 
     // MARK: - Popover Toggle

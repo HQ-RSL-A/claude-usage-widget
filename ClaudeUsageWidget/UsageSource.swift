@@ -79,19 +79,19 @@ final class ClaudeCodeTokenProvider: BearerTokenProvider {
         self.cached = initial
     }
 
-    /// Each Keychain read can prompt (unless the user chose Always Allow), so the token is cached until it nears expiry.
+    /// The token is cached until it nears expiry, so the Keychain is read about once per Claude Code refresh.
     func accessToken() async throws -> String {
         if let cached, cached.expiresAt.timeIntervalSinceNow > refreshLeeway { return cached.accessToken }
-        return try reload()
+        return try await reload()
     }
 
     /// Claude Code may have refreshed since the last read; read again, never refresh it ourselves.
     func refreshAfterUnauthorized() async throws -> String {
-        try reload()
+        try await reload()
     }
 
-    private func reload() throws -> String {
-        guard let token = try reader.read(), token.isValid else {
+    private func reload() async throws -> String {
+        guard let token = try await reader.read(), token.isValid else {
             cached = nil
             throw ClaudeAPIError.sessionExpired
         }

@@ -22,5 +22,5 @@ final class FakeClaudeCodeCredentials: ClaudeCodeCredentialsReading {
     init(token: ClaudeCodeToken? = nil, failure: ClaudeAPIError? = nil) { self.token = token; self.failure = failure }
 
     func exists() -> Bool { token != nil || failure != nil }
-    func read() throws -> ClaudeCodeToken? { reads += 1; if let failure { throw failure }; return token }
+    func read() async throws -> ClaudeCodeToken? { reads += 1; if let failure { throw failure }; return token }
 }

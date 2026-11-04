@@ -39,10 +39,12 @@ enum StatusIcon {
         return NSSize(width: count * slot + (count - 1) * gap, height: slot)
     }
 
-    /// `darkMenuBar` picks the color of normal rings when the image cannot be a template (any ring amber or red).
-    static func image(for model: StatusIconModel, darkMenuBar: Bool) -> NSImage {
-        let foreground: NSColor = (model.isTemplate || !darkMenuBar) ? .black : .white
+    /// When the image cannot be a template (any ring amber or red), normal parts take the menu bar's color,
+    /// picked while drawing: macOS draws the item once per display, each in that menu bar's appearance,
+    /// so one image is right everywhere and nothing has to watch the appearance.
+    static func image(for model: StatusIconModel) -> NSImage {
         let image = NSImage(size: size(for: model), flipped: false) { _ in
+            let foreground = foregroundColor(isTemplate: model.isTemplate, appearance: NSAppearance.currentDrawing())
             for (index, ring) in model.rings.enumerated() {
                 let center = CGPoint(x: slot / 2 + CGFloat(index) * (slot + gap), y: slot / 2)
                 draw(ring, at: center, foreground: foreground, dimmed: model.isDimmed)
@@ -50,7 +52,14 @@ enum StatusIcon {
             return true
         }
         image.isTemplate = model.isTemplate
+        image.cacheMode = .never   // a cached drawing would carry one display's color onto the other
         return image
+    }
+
+    /// A template is tinted by the system, so it is drawn black; otherwise white on a dark menu bar, black on a light one.
+    private static func foregroundColor(isTemplate: Bool, appearance: NSAppearance) -> NSColor {
+        guard !isTemplate else { return .black }
+        return appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
     }
 
     // MARK: - Drawing

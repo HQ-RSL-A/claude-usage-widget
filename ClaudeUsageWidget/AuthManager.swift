@@ -114,7 +114,7 @@ final class AuthManager {
     private func resolveClaudeCode() async -> Bool {
         guard !deps.defaults.bool(forKey: Self.optOutKey), !deps.defaults.bool(forKey: Self.deniedKey) else { return false }
         do {
-            guard let token = try deps.claudeCode.read() else {
+            guard let token = try await deps.claudeCode.read() else {
                 claudeCodeItemExists = false
                 return false
             }

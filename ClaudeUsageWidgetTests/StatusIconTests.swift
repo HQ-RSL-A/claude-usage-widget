@@ -14,26 +14,52 @@ final class StatusIconTests: XCTestCase {
         XCTAssertEqual(StatusIcon.size(for: extremes), NSSize(width: 43, height: 20))
         XCTAssertEqual(StatusIcon.size(for: other), StatusIcon.size(for: extremes))
         XCTAssertEqual(StatusIcon.size(for: StatusIconModel(rings: [.noData], isDimmed: true)), NSSize(width: 20, height: 20))
-        XCTAssertEqual(StatusIcon.image(for: extremes, darkMenuBar: true).size, NSSize(width: 43, height: 20))
+        XCTAssertEqual(StatusIcon.image(for: extremes).size, NSSize(width: 43, height: 20))
     }
 
     func test_image_templateOnlyWhenNoRingIsColored() {
         let quiet = StatusIconModel(rings: [.usage(left: 50, used: 0.5, color: .normal), .noData], isDimmed: false)
         XCTAssertTrue(quiet.isTemplate)
-        XCTAssertTrue(StatusIcon.image(for: quiet, darkMenuBar: true).isTemplate)
+        XCTAssertTrue(StatusIcon.image(for: quiet).isTemplate)
         XCTAssertFalse(normalAndAmber.isTemplate)
-        XCTAssertFalse(StatusIcon.image(for: normalAndAmber, darkMenuBar: true).isTemplate)
+        XCTAssertFalse(StatusIcon.image(for: normalAndAmber).isTemplate)
     }
 
     /// Not a template once a ring is amber, so the system no longer tints the normal ring: it has to be
     /// drawn in the menu bar's own color, white on a dark menu bar and black on a light one.
     func test_image_mixedColors_drawsNormalRingInMenuBarForeground() {
-        let onDark = pixelAtTopOfFirstRing(StatusIcon.image(for: normalAndAmber, darkMenuBar: true))
+        let onDark = pixelAtTopOfFirstRing(render(StatusIcon.image(for: normalAndAmber), in: .darkAqua))
         XCTAssertGreaterThan(onDark.alphaComponent, 0.8)
         XCTAssertGreaterThan(onDark.brightnessComponent, 0.8)
-        let onLight = pixelAtTopOfFirstRing(StatusIcon.image(for: normalAndAmber, darkMenuBar: false))
+        let onLight = pixelAtTopOfFirstRing(render(StatusIcon.image(for: normalAndAmber), in: .aqua))
         XCTAssertGreaterThan(onLight.alphaComponent, 0.8)
         XCTAssertLessThan(onLight.brightnessComponent, 0.2)
+    }
+
+    // MARK: - One image for every menu bar (v0.5.1)
+
+    /// macOS draws the status item once per display, each time in that menu bar's own appearance. The light
+    /// or dark color is picked while drawing, so one image is right on every display and the app never has
+    /// to watch the appearance (watching it and re-setting the image was an endless redraw loop).
+    func test_oneImage_drawsInTheAppearanceItIsDrawnIn() {
+        let shortArc = StatusIconModel(rings: [.usage(left: 70, used: 0.3, color: .amber)], isDimmed: false)
+        let image = StatusIcon.image(for: shortArc)
+        let onDark = render(image, in: .darkAqua)
+        let onLight = render(image, in: .aqua)
+        XCTAssertTrue(numberArea(onDark).contains(where: isWhiteInk), "white digits on a dark menu bar")
+        XCTAssertTrue(numberArea(onLight).contains(where: isBlackInk), "black digits on a light menu bar, from the same image")
+        XCTAssertFalse(numberArea(onLight).contains(where: isWhiteInk), "no white left over from the dark drawing")
+        // 9 o'clock on the ring: track only, the arc stops near 4 o'clock.
+        let darkTrack = onDark.colorAt(x: 3, y: 20)!.usingColorSpace(.deviceRGB)!
+        let lightTrack = onLight.colorAt(x: 3, y: 20)!.usingColorSpace(.deviceRGB)!
+        XCTAssertGreaterThan(darkTrack.alphaComponent, 0.05)
+        XCTAssertGreaterThan(lightTrack.alphaComponent, 0.05)
+        XCTAssertGreaterThan(darkTrack.brightnessComponent, lightTrack.brightnessComponent + 0.1, "white track on dark, black track on light")
+    }
+
+    /// A cached drawing would carry one menu bar's color onto the other display.
+    func test_image_isRedrawnEveryTime() {
+        XCTAssertEqual(StatusIcon.image(for: normalAndAmber).cacheMode, .never)
     }
 
     // MARK: - Readable on any wallpaper (Rahul, 2026-10-26)
@@ -43,19 +69,17 @@ final class StatusIconTests: XCTestCase {
     /// Amber or red digits get lost on a colored wallpaper: the number stays in the menu bar's own color,
     /// and only the ring's arc carries the warning color.
     func test_image_numbersUseTheMenuBarColor_onAColoredRing() {
-        let onDark = render(StatusIcon.image(for: amberOnly, darkMenuBar: true))
-        XCTAssertTrue(numberArea(onDark).contains { $0.alphaComponent > 0.8 && min($0.redComponent, $0.greenComponent, $0.blueComponent) > 0.85 },
-                      "a white digit pixel on a dark menu bar")
-        let onLight = render(StatusIcon.image(for: amberOnly, darkMenuBar: false))
-        XCTAssertTrue(numberArea(onLight).contains { $0.alphaComponent > 0.8 && max($0.redComponent, $0.greenComponent, $0.blueComponent) < 0.15 },
-                      "a black digit pixel on a light menu bar")
+        let onDark = render(StatusIcon.image(for: amberOnly), in: .darkAqua)
+        XCTAssertTrue(numberArea(onDark).contains(where: isWhiteInk), "a white digit pixel on a dark menu bar")
+        let onLight = render(StatusIcon.image(for: amberOnly), in: .aqua)
+        XCTAssertTrue(numberArea(onLight).contains(where: isBlackInk), "a black digit pixel on a light menu bar")
     }
 
     /// The faint track under a colored arc is neutral too; only the used part is amber.
     func test_image_trackIsNeutral_underAColoredArc() {
         let shortArc = StatusIconModel(rings: [.usage(left: 70, used: 0.3, color: .amber)], isDimmed: false)
         // 9 o'clock on the ring: track only, the arc stops near 4 o'clock.
-        let track = render(StatusIcon.image(for: shortArc, darkMenuBar: true)).colorAt(x: 3, y: 20)!.usingColorSpace(.deviceRGB)!
+        let track = render(StatusIcon.image(for: shortArc), in: .darkAqua).colorAt(x: 3, y: 20)!.usingColorSpace(.deviceRGB)!
         XCTAssertGreaterThan(track.alphaComponent, 0.05)
         XCTAssertGreaterThan(track.blueComponent, track.redComponent * 0.8, "white track, not amber")
     }
@@ -63,7 +87,7 @@ final class StatusIconTests: XCTestCase {
     /// Every session starts at 100: the three digits must clear the track (its inner edge is 7.6 pt from the center).
     func test_image_hundredClearsTheTrack() {
         let fresh = StatusIconModel(rings: [.usage(left: 100, used: 0, color: .normal)], isDimmed: false)
-        let rep = render(StatusIcon.image(for: fresh, darkMenuBar: true))
+        let rep = render(StatusIcon.image(for: fresh), in: .darkAqua)
         // Nothing used, so no arc: every pixel above 50% opacity is digit ink (the track is drawn at 25%).
         var farthest: CGFloat = 0
         for x in 0..<rep.pixelsWide {
@@ -78,17 +102,27 @@ final class StatusIconTests: XCTestCase {
 
     // MARK: - Rendering helpers
 
-    /// Renders at 2x on a transparent bitmap.
-    private func render(_ image: NSImage) -> NSBitmapImageRep {
+    /// Renders at 2x on a transparent bitmap, the way a menu bar with that appearance would.
+    private func render(_ image: NSImage, in appearance: NSAppearance.Name) -> NSBitmapImageRep {
         let size = image.size
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2), bitsPerSample: 8,
                                    samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
         rep.size = size
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        image.draw(in: NSRect(origin: .zero, size: size))
-        NSGraphicsContext.restoreGraphicsState()
+        NSAppearance(named: appearance)!.performAsCurrentDrawingAppearance {
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            image.draw(in: NSRect(origin: .zero, size: size))
+            NSGraphicsContext.restoreGraphicsState()
+        }
         return rep
+    }
+
+    private func isWhiteInk(_ color: NSColor) -> Bool {
+        color.alphaComponent > 0.8 && min(color.redComponent, color.greenComponent, color.blueComponent) > 0.85
+    }
+
+    private func isBlackInk(_ color: NSColor) -> Bool {
+        color.alphaComponent > 0.8 && max(color.redComponent, color.greenComponent, color.blueComponent) < 0.15
     }
 
     /// The middle of the first ring, where its number sits (pixels, rows counted from the top).
@@ -97,8 +131,8 @@ final class StatusIconTests: XCTestCase {
     }
 
     /// Reads the arc just right of 12 o'clock on the first ring (center 10,10, radius 8.6).
-    private func pixelAtTopOfFirstRing(_ image: NSImage) -> NSColor {
+    private func pixelAtTopOfFirstRing(_ rep: NSBitmapImageRep) -> NSColor {
         // colorAt counts rows from the top: 18.75 pt up is row 2.
-        render(image).colorAt(x: 21, y: 2)!.usingColorSpace(.deviceRGB)!
+        rep.colorAt(x: 21, y: 2)!.usingColorSpace(.deviceRGB)!
     }
 }

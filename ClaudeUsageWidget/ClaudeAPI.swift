@@ -22,7 +22,7 @@ enum ClaudeAPIError: Error, Equatable {
     case callbackTimeout       // browser flow: no redirect within the window
     case signInCancelled       // browser flow: the user cancelled
     case stateMismatch         // browser flow: redirect carried a different state
-    case keychain(Int32)       // SecItem call failed (OSStatus)
+    case keychain(Int32)       // Keychain read failed (OSStatus, or /usr/bin/security's exit status)
     case oauth(String)         // token endpoint refused (4xx), message from its body
 
     /// nil for 2xx. Pure.
