@@ -75,11 +75,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menuViewController.onUseClaudeCode = { [weak self] in Task { await self?.authManager?.useClaudeCodeToken() } }
         menuViewController.onSignInInsideApp = { [weak self] in self?.authManager?.signInInsideApp() }
         menuViewController.onCancelSignIn = { [weak self] in self?.authManager?.cancelBrowserSignIn() }
-        menuViewController.currentLayout = { MenuBarLayout.load(from: .standard) }
-        menuViewController.onChangeLayout = { [weak self] layout in
-            layout.save(to: .standard)
-            self?.renderStatusItem()
-        }
+        // Claude only, until the other services are wired in.
+        menuViewController.shownServices = { [.claude] }
+        menuViewController.setUpServices = { [.claude] }
+        menuViewController.currentMenuBarChoice = { .lowest }
+        menuViewController.onToggleService = { _ in }
+        menuViewController.onChooseMenuBar = { _ in }
         menuViewController.isOpenAtLoginEnabled = { [weak self] in self?.openAtLogin.isEnabled ?? false }
         menuViewController.onToggleOpenAtLogin = { [weak self] in self?.openAtLogin.toggle() }
 
