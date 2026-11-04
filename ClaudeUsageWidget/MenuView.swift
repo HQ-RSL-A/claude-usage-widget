@@ -40,7 +40,8 @@ class MenuViewController: NSViewController {
     var shownServices: () -> [ServiceID] = { [.claude] }
     /// The services worth offering in the "Show" menu: the ones set up on this Mac.
     var setUpServices: () -> [ServiceID] = { [.claude] }
-    var panelIcon: (ServiceID) -> NSImage = { ServiceIcon.panelIcon(for: $0) } {
+    /// Each service's icon, from the app's shared cache: the panel redraws often, and a lookup is not free.
+    var panelIcon: (ServiceID) -> NSImage = { ServiceIcon.panelIcons.icon(for: $0) } {
         didSet { renderedSections = nil }
     }
 
@@ -344,7 +345,8 @@ class MenuViewController: NSViewController {
 
     private func fill(_ section: inout PanelSection, limits: [ServiceLimit], readAt: Date, text: UsageText) {
         section.rows = limits.map { row(for: $0, text: text) }
-        section.isDimmed = Self.isOutOfDate(section.service, limits: limits, readAt: readAt, now: text.now)
+        // The menu bar asks the same question of the same reading, so the two never disagree about what is current.
+        section.isDimmed = !ServiceState.reading(limits: limits, readAt: readAt).isCurrent(section.service, now: text.now)
         if limits.isEmpty {
             section.note = "No usage limits reported for this plan"
         } else if section.service != .claude, text.now.timeIntervalSince(readAt) > Self.noteAfter {
@@ -359,13 +361,6 @@ class MenuViewController: NSViewController {
                  reset: text.shortReset(limit.resetsAt),
                  toolTip: limit.isBudget ? "Monthly budget" : text.fullReset(limit.resetsAt),
                  colorState: limit.colorState)
-    }
-
-    /// Numbers are out of date when they are older than their service keeps them current, or were read before
-    /// a reset that has since happened.
-    private static func isOutOfDate(_ service: ServiceID, limits: [ServiceLimit], readAt: Date, now: Date) -> Bool {
-        if now.timeIntervalSince(readAt) > service.staleAfter { return true }
-        return limits.contains { limit in !limit.isBudget && (limit.resetsAt.map { $0 <= now } ?? false) }
     }
 
     private func claudeToolTip() -> String {
@@ -548,6 +543,7 @@ class MenuViewController: NSViewController {
     func rowVoiceOverTexts(for service: ServiceID) -> [String?] { sectionView(for: service)?.rowVoiceOverTexts ?? [] }
     func rowPercentColors(for service: ServiceID) -> [NSColor] { sectionView(for: service)?.rowPercentColors ?? [] }
     func note(for service: ServiceID) -> String? { sectionView(for: service)?.noteText }
+    func noteColor(for service: ServiceID) -> NSColor? { sectionView(for: service)?.noteColor }
     func iconToolTip(for service: ServiceID) -> String? { sectionView(for: service)?.iconToolTip }
     func iconImage(for service: ServiceID) -> NSImage? { sectionView(for: service)?.icon }
     func isDimmed(_ service: ServiceID) -> Bool { sectionView(for: service)?.isDimmed ?? false }

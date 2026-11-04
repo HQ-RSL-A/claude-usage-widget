@@ -51,7 +51,7 @@ final class ClaudeAPIErrorTests: XCTestCase {
     }
 
     func test_appInfo_versionMatchesBundle() {
-        XCTAssertEqual(AppInfo.version, "0.5.1")
+        XCTAssertEqual(AppInfo.version, "0.6.0")
     }
 
     func test_userMessage_isHumanReadable() {

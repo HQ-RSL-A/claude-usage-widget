@@ -10,6 +10,9 @@ final class ServicesPoller {
     private(set) var lastRefresh: Date?
     /// Called once at the end of a refresh that changed what `states` holds.
     var onChange: (() -> Void)?
+    /// Asked just before each read. False means the service is hidden, so it is not read and, for Codex, its token is not
+    /// sent anywhere: nobody asked to see it. Everything is enabled until the app says otherwise.
+    var isEnabled: (ServiceID) -> Bool = { _ in true }
 
     /// How late the timer may fire, so the system can wake it together with other timers instead of on its own.
     /// Never more than a tenth of the interval: 30 s for the five-minute poll, and a short interval still fires on time.
@@ -83,8 +86,8 @@ final class ServicesPoller {
         let before = states
         for reader in readers {
             let id = reader.service
-            guard reader.isSetUp() else {
-                states[id] = nil   // its files are gone: nothing of it stays behind
+            guard reader.isSetUp(), isEnabled(id) else {
+                states[id] = nil   // its files are gone or it is hidden: nothing of it stays behind
                 continue
             }
             let state = await reader.read()

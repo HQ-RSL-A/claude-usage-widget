@@ -27,6 +27,14 @@ enum HTTP {
         configuration.timeoutIntervalForResource = 30
         return URLSession(configuration: configuration)
     }()
+
+    /// Deletes everything `URLCache.shared` holds, on disk and in memory. Before v0.6.0 the app sent its requests
+    /// through `URLSession.shared`, which wrote each one, headers and bearer token included, into
+    /// `~/Library/Caches/<bundle id>/Cache.db` (Claude Code's token among them). Nothing uses that cache now, so the
+    /// app empties it once at launch, before it sends any request.
+    static func purgeCachedResponses(in cache: URLCache = .shared) {
+        cache.removeAllCachedResponses()
+    }
 }
 
 // MARK: - TokenSet

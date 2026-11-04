@@ -16,6 +16,11 @@ enum ServiceIcon {
         return mark
     }
 
+    /// The panel's icons, each looked up once for as long as the app runs: an app's icon carries about 32 images up to
+    /// 2048 px, and the panel asks for it every time it is redrawn. Nothing invalidates it; a changed icon shows at the
+    /// next launch.
+    static let panelIcons = PanelIconCache()
+
     /// The icon of the service's Mac app, found by its bundle id. Without the app, a tile in the service's color
     /// with its mark in white.
     static func panelIcon(for service: ServiceID,
@@ -127,5 +132,27 @@ private extension ServiceID {
         case .claude: return NSColor(srgbRed: 0xD9 / 255, green: 0x77 / 255, blue: 0x57 / 255, alpha: 1)
         case .grokBot, .codex: return .black
         }
+    }
+}
+
+// MARK: - PanelIconCache
+
+/// Looks each service's icon up the first time it is asked for and keeps it. The same image goes to every section.
+final class PanelIconCache {
+    private let lookup: (ServiceID) -> NSImage
+    private var icons: [ServiceID: NSImage] = [:]
+    private let lock = NSLock()
+
+    init(lookup: @escaping (ServiceID) -> NSImage = { ServiceIcon.panelIcon(for: $0) }) {
+        self.lookup = lookup
+    }
+
+    func icon(for service: ServiceID) -> NSImage {
+        lock.lock()
+        defer { lock.unlock() }
+        if let icon = icons[service] { return icon }
+        let icon = lookup(service)
+        icons[service] = icon
+        return icon
     }
 }

@@ -43,7 +43,10 @@ final class ServiceIconTests: XCTestCase {
                 XCTAssertGreaterThan(raster.alpha(unitX: x, unitY: y), 240, "\(service): ink at (\(x), \(y))")
             }
             for (x, y) in look.cutouts {
-                XCTAssertLessThan(raster.alpha(unitX: x, unitY: y), 15, "\(service): clear at (\(x), \(y))")
+                // Mostly clear, not exactly: a probe near the edge of a cutout reads a little ink from antialiasing
+                // (Codex's chevron reads 11 here), and another Xcode's rasters read a little more. A real cutout that
+                // had filled in would read 255, and the underscore probe proves the cutout on its own.
+                XCTAssertLessThan(raster.alpha(unitX: x, unitY: y), 64, "\(service): clear at (\(x), \(y))")
             }
             shapes.append(raster.alphaBytes)
         }
@@ -112,6 +115,34 @@ final class ServiceIconTests: XCTestCase {
         let expectedRight = origin + body * (0.8 - 0.6 * 2 / 24)
         XCTAssertEqual(Double(white.first ?? -1), expectedLeft, accuracy: 1.5)
         XCTAssertEqual(Double(white.last ?? -1) + 1, expectedRight, accuracy: 1.5)
+    }
+
+    // MARK: - Panel icon cache
+
+    /// `NSWorkspace` icons carry about 32 representations up to 2048 px, and the panel asks for each one every time
+    /// it is redrawn. Each service is looked up once, and every later ask gets the same image.
+    func testPanelIconsAreLookedUpOncePerService() {
+        var asked: [ServiceID] = []
+        let cache = PanelIconCache { service in
+            asked.append(service)
+            return NSImage(size: NSSize(width: 28, height: 28))
+        }
+        let claude = cache.icon(for: .claude)
+        XCTAssertTrue(cache.icon(for: .claude) === claude, "the same image, not a new lookup")
+        let grokBot = cache.icon(for: .grokBot)
+        XCTAssertFalse(grokBot === claude, "one image per service")
+        XCTAssertTrue(cache.icon(for: .grokBot) === grokBot)
+        XCTAssertTrue(cache.icon(for: .claude) === claude)
+        XCTAssertEqual(asked, [.claude, .grokBot])
+    }
+
+    /// The app's own cache looks icons up the way `panelIcon(for:)` does: through the Mac's installed apps.
+    func testTheSharedCacheHandsOutTheSameIconEveryTime() {
+        for service in ServiceID.allCases {
+            let icon = ServiceIcon.panelIcons.icon(for: service)
+            XCTAssertEqual(icon.size, panelSize, "\(service)")
+            XCTAssertTrue(ServiceIcon.panelIcons.icon(for: service) === icon, "\(service)")
+        }
     }
 
     // MARK: - Helpers

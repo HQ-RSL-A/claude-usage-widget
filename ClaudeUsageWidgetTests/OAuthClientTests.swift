@@ -135,6 +135,31 @@ final class OAuthClientTests: XCTestCase {
         XCTAssertFalse(HTTP.session === URLSession.shared)
     }
 
+    /// Before v0.6.0 the app used `URLSession.shared`, which kept every request, bearer token included, in
+    /// `~/Library/Caches/<bundle id>/Cache.db`. Launching deletes what is left there, once, before any request.
+    /// The test fills a cache of its own in a temporary folder and never touches the real one.
+    func test_purgeCachedResponses_emptiesTheCache() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("io.rsla.ClaudeUsageWidget.tests.cache-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = URLCache(memoryCapacity: 1_000_000, diskCapacity: 1_000_000, directory: directory)
+        var cachedRequests: [URLRequest] = []
+        for path in ["/api/oauth/usage", "/api/oauth/profile"] {
+            let url = URL(string: "https://api.anthropic.com\(path)")!
+            var request = URLRequest(url: url)
+            request.setValue("Bearer not-a-real-token", forHTTPHeaderField: "Authorization")
+            let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["Cache-Control": "max-age=600"])!
+            cache.storeCachedResponse(CachedURLResponse(response: response, data: Data("{}".utf8)), for: request)
+            XCTAssertNotNil(cache.cachedResponse(for: request), "the setup: \(path) was kept")
+            cachedRequests.append(request)
+        }
+
+        HTTP.purgeCachedResponses(in: cache)
+
+        for request in cachedRequests {
+            XCTAssertNil(cache.cachedResponse(for: request), "\(request.url?.path ?? "") is gone")
+        }
+    }
+
     func test_transportFailure_throwsTransport() async {
         let now = fixedNow
         let failing = OAuthClient(session: FailingURLProtocol.session(), now: { now })

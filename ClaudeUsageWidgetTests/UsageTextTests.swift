@@ -83,6 +83,23 @@ final class UsageTextTests: XCTestCase {
         XCTAssertEqual(text.age(of: now.addingTimeInterval(30)), "just now")
     }
 
+    /// Grok Bot's reading is often days old, and "72 hr ago" makes a person do the sum.
+    func test_age_aDayOrMoreCountsInDays() {
+        let hour: TimeInterval = 3600
+        XCTAssertEqual(text.age(of: now.addingTimeInterval(-23 * hour - 59 * 60)), "23 hr ago", "still under a day")
+        XCTAssertEqual(text.age(of: now.addingTimeInterval(-24 * hour)), "1 day ago", "a day is a day, not 24 hr")
+        XCTAssertEqual(text.age(of: now.addingTimeInterval(-47 * hour)), "1 day ago", "whole days only")
+        XCTAssertEqual(text.age(of: now.addingTimeInterval(-48 * hour)), "2 days ago")
+        XCTAssertEqual(text.age(of: now.addingTimeInterval(-72 * hour)), "3 days ago")
+        XCTAssertEqual(text.age(of: now.addingTimeInterval(-10 * 24 * hour)), "10 days ago")
+    }
+
+    func test_status_aDayOldReadingSaysDays() {
+        XCTAssertEqual(text.status(lastUpdated: now.addingTimeInterval(-2 * 24 * 3600), isFetching: false, failure: nil), "Updated 2 days ago")
+        XCTAssertEqual(text.status(lastUpdated: now.addingTimeInterval(-24 * 3600), isFetching: false, failure: "Offline"),
+                       "Couldn't refresh: Offline. Last updated 1 day ago.")
+    }
+
     func test_status_variants() {
         let twelveMinutesAgo = now.addingTimeInterval(-12 * 60)
         let offline = "Offline or claude.ai unreachable"

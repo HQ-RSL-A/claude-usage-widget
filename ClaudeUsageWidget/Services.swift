@@ -83,6 +83,30 @@ extension ServiceState {
     }
 }
 
+extension ServiceState {
+    /// Whether the numbers may be shown as current. The menu bar and the panel both ask this, so they always agree.
+    /// A reading is current until it is older than its service keeps it current, and it stops being current once a
+    /// limit that can run out has reset: the reading may be from before the reset. A budget (Claude's extra
+    /// usage) is spending, not a rate limit, so it never counts. The other states have no numbers to be current.
+    func isCurrent(_ service: ServiceID, now: Date) -> Bool {
+        guard case .reading(let limits, let readAt) = self else { return false }
+        if now.timeIntervalSince(readAt) > service.staleAfter { return false }
+        return !limits.contains { limit in !limit.isBudget && (limit.resetsAt.map { $0 <= now } ?? false) }
+    }
+
+    /// What every service that is set up on this Mac has to show: Claude's from its own sign-in, the others from
+    /// `others` (the poller's states). A set-up service with no state yet is loading, and a service that is not set up
+    /// has none at all, whatever `others` still holds for it. Never derived from `others`' keys: the shown services
+    /// come from what is set up.
+    static func merged(claude: ServiceState, others: [ServiceID: ServiceState], setUp: [ServiceID]) -> [ServiceID: ServiceState] {
+        var states: [ServiceID: ServiceState] = [:]
+        for service in setUp {
+            states[service] = service == .claude ? claude : others[service] ?? .loading
+        }
+        return states
+    }
+}
+
 extension UsageData {
     /// The limits in display order: the buckets in `BucketKind` order, then the monthly budget
     /// when extra usage is on and the API reports how much of it is used.
@@ -140,6 +164,22 @@ struct ServiceSettings {
             case .service(let id): defaults.set(id.rawValue, forKey: Self.menuBarServiceKey)
             }
         }
+    }
+
+    /// The services with a section in the panel: the set-up ones that are not hidden, in the order they are given
+    /// (panel order). Never empty, because an empty panel is a dead end: when every set-up service is hidden (a
+    /// stored choice that no longer fits what is installed) the first of them is shown anyway.
+    func shownServices(among setUp: [ServiceID]) -> [ServiceID] {
+        let shown = setUp.filter { !isHidden($0) }
+        return shown.isEmpty ? [setUp.first ?? .claude] : shown
+    }
+
+    /// Keys earlier versions wrote: `ringMetricMode` (v0.2.0 to v0.4.2, one ring) and `menuBarShows` (v0.5.0 and v0.5.1,
+    /// which rings the menu bar drew). Deleted at launch, not migrated: neither means anything now.
+    static let legacyKeys = ["ringMetricMode", "menuBarShows"]
+
+    static func removeLegacyKeys(from defaults: UserDefaults) {
+        legacyKeys.forEach { defaults.removeObject(forKey: $0) }
     }
 
     /// Raw values as stored, including any this version does not know. Anything that is not an array of strings reads as empty.

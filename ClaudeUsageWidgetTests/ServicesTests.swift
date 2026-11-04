@@ -184,4 +184,130 @@ final class ServicesTests: XCTestCase {
         settings.setHidden(true, for: .grokBot)
         XCTAssertEqual(ServiceID.allCases.filter(settings.isHidden), [.grokBot])
     }
+
+    // MARK: - Old keys
+
+    /// v0.6.0 replaced the rings and their "Show in Menu Bar" layout. Both keys earlier versions wrote are deleted at launch,
+    /// not migrated: neither means anything now.
+    func testRemoveLegacyKeysDeletesBothOldKeysAndNothingElse() {
+        defaults.set("weekly", forKey: "ringMetricMode")
+        defaults.set("session", forKey: "menuBarShows")
+        defaults.set("grokBot", forKey: "menuBarService")
+        defaults.set(["codex"], forKey: "hiddenServices")
+        defaults.set(true, forKey: "claudeCodeTokenOptOut")
+
+        ServiceSettings.removeLegacyKeys(from: defaults)
+
+        XCTAssertNil(defaults.object(forKey: "ringMetricMode"))
+        XCTAssertNil(defaults.object(forKey: "menuBarShows"))
+        XCTAssertEqual(ServiceSettings(defaults: defaults).menuBarChoice, .service(.grokBot), "this version's own choices stay")
+        XCTAssertTrue(ServiceSettings(defaults: defaults).isHidden(.codex))
+        XCTAssertEqual(defaults.object(forKey: "claudeCodeTokenOptOut") as? Bool, true, "so do the sign-in flags")
+        ServiceSettings.removeLegacyKeys(from: defaults)   // nothing to remove the second time: no trouble
+    }
+
+    // MARK: - Which services the panel shows
+
+    func testShownServicesAreTheSetUpOnesMinusTheHiddenOnesInPanelOrder() {
+        let settings = ServiceSettings(defaults: defaults)
+        let setUp: [ServiceID] = [.claude, .grokBot, .codex]
+        XCTAssertEqual(settings.shownServices(among: setUp), [.claude, .grokBot, .codex])
+
+        settings.setHidden(true, for: .grokBot)
+        XCTAssertEqual(settings.shownServices(among: setUp), [.claude, .codex])
+        settings.setHidden(true, for: .claude)
+        XCTAssertEqual(settings.shownServices(among: setUp), [.codex])
+        settings.setHidden(false, for: .grokBot)
+        XCTAssertEqual(settings.shownServices(among: setUp), [.grokBot, .codex])
+    }
+
+    /// Hidden for a service that is not set up is nothing to the panel, and a service that is not set up is never shown.
+    func testShownServicesNeverIncludeOneThatIsNotSetUp() {
+        let settings = ServiceSettings(defaults: defaults)
+        settings.setHidden(true, for: .codex)   // hidden, and then it was uninstalled
+        XCTAssertEqual(settings.shownServices(among: [.claude, .grokBot]), [.claude, .grokBot])
+        XCTAssertEqual(ServiceSettings(defaults: defaults).shownServices(among: [.claude]), [.claude])
+    }
+
+    /// An empty panel is a dead end: when every set-up service is hidden (a stored choice that no longer fits what is
+    /// installed), the first of them is shown anyway.
+    func testAtLeastOneServiceAlwaysStaysShown() {
+        let settings = ServiceSettings(defaults: defaults)
+        for service in ServiceID.allCases { settings.setHidden(true, for: service) }
+        XCTAssertEqual(settings.shownServices(among: [.claude, .grokBot, .codex]), [.claude])
+        XCTAssertEqual(settings.shownServices(among: [.grokBot, .codex]), [.grokBot])
+        XCTAssertEqual(settings.shownServices(among: [.claude]), [.claude])
+    }
+
+    // MARK: - What every service has to show
+
+    private func weekly(_ used: Double) -> ServiceState {
+        .reading(limits: [ServiceLimit(label: "Weekly", percentUsed: used, resetsAt: nil)], readAt: Date(timeIntervalSince1970: 1_000))
+    }
+
+    /// Claude's state comes from its own sign-in, the others from the poller. A set-up service the poller has not
+    /// read yet is loading, and one that is not set up has no state at all, whatever the poller still holds for it.
+    func testMergedStatesCoverEverySetUpServiceAndNothingElse() {
+        let claude = ServiceState.notSignedIn(hint: "Not signed in")
+        let merged = ServiceState.merged(claude: claude, others: [.grokBot: weekly(0.07)], setUp: [.claude, .grokBot, .codex])
+        XCTAssertEqual(merged, [.claude: claude, .grokBot: weekly(0.07), .codex: .loading])
+
+        let onlyClaude = ServiceState.merged(claude: .loading, others: [:], setUp: [.claude])
+        XCTAssertEqual(onlyClaude, [.claude: .loading])
+
+        // A stale entry for a service that is no longer set up (the preview's signed-out Codex) is dropped.
+        let dropped = ServiceState.merged(claude: .loading, others: [.codex: .notSignedIn(hint: "Open Codex and sign in with ChatGPT")], setUp: [.claude, .grokBot])
+        XCTAssertEqual(dropped, [.claude: .loading, .grokBot: .loading])
+    }
+
+    /// Claude's own state wins over anything the poller might say for it.
+    func testMergedClaudeIsAlwaysItsOwn() {
+        let merged = ServiceState.merged(claude: .loading, others: [.claude: weekly(0.5)], setUp: [.claude])
+        XCTAssertEqual(merged, [.claude: .loading])
+    }
+
+    // MARK: - Is a reading current
+
+    private let now = Date(timeIntervalSince1970: 1_794_000_000)
+
+    /// A reading of one limit, taken `minutesAgo` minutes before `now`.
+    private func reading(minutesAgo: Double, resets: Date? = nil, isBudget: Bool = false) -> ServiceState {
+        .reading(limits: [ServiceLimit(label: "Weekly", percentUsed: 0.5, resetsAt: resets, isBudget: isBudget)],
+                 readAt: now.addingTimeInterval(-minutesAgo * 60))
+    }
+
+    /// Claude and Codex are polled every five minutes, so 15 minutes is three missed polls; Grok Bot's numbers only
+    /// move when its Mac app refreshes them, so it counts as current for a day.
+    func testReadingIsCurrentUntilItsOwnServicesClockRunsOut() {
+        for (service, limitInMinutes) in [(ServiceID.claude, 15.0), (.codex, 15.0), (.grokBot, 24 * 60.0)] {
+            XCTAssertTrue(reading(minutesAgo: limitInMinutes).isCurrent(service, now: now), "\(service) at its limit")
+            XCTAssertFalse(reading(minutesAgo: limitInMinutes + 1).isCurrent(service, now: now), "\(service) just past it")
+        }
+    }
+
+    /// A reading can be young and still from before a reset that has since happened.
+    func testReadingFromBeforeAResetIsNotCurrent() {
+        XCTAssertFalse(reading(minutesAgo: 1, resets: now.addingTimeInterval(-30)).isCurrent(.claude, now: now))
+        XCTAssertFalse(reading(minutesAgo: 1, resets: now).isCurrent(.claude, now: now), "a reset at this very moment has happened")
+        XCTAssertTrue(reading(minutesAgo: 1, resets: now.addingTimeInterval(1)).isCurrent(.claude, now: now), "a reset still ahead")
+        XCTAssertTrue(reading(minutesAgo: 1, resets: nil).isCurrent(.claude, now: now), "no reset time is nothing to wait for")
+        // One limit that has reset makes the whole reading old: the others were read before it too.
+        let oneReset = ServiceState.reading(limits: [
+            ServiceLimit(label: "5hr Session", percentUsed: 0.3, resetsAt: now.addingTimeInterval(3600)),
+            ServiceLimit(label: "Weekly", percentUsed: 0.8, resetsAt: now.addingTimeInterval(-1)),
+        ], readAt: now.addingTimeInterval(-60))
+        XCTAssertFalse(oneReset.isCurrent(.claude, now: now))
+    }
+
+    /// A budget (Claude's extra usage) is spending, not a rate limit, so it never makes a reading old.
+    func testBudgetNeverMakesAReadingOld() {
+        XCTAssertTrue(reading(minutesAgo: 1, resets: now.addingTimeInterval(-3600), isBudget: true).isCurrent(.claude, now: now))
+    }
+
+    /// There are no numbers in the other states, so none of them is current.
+    func testStatesWithoutNumbersAreNeverCurrent() {
+        for state in [ServiceState.loading, .notSignedIn(hint: "Not signed in"), .unavailable(reason: "Can't reach claude.ai")] {
+            XCTAssertFalse(state.isCurrent(.claude, now: now), "\(state)")
+        }
+    }
 }

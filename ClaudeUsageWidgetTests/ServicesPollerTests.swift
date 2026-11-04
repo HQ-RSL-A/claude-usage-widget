@@ -226,6 +226,79 @@ final class ServicesPollerTests: XCTestCase {
         XCTAssertEqual(poller.states[.codex], .unavailable(reason: "Couldn't reach Codex"))
     }
 
+    // MARK: - Hidden services
+
+    /// A hidden service is not read at all: reading Codex sends its token to ChatGPT, and nobody asked to see it.
+    func testDisabledServiceIsNotRead() async {
+        let grok = FakeServiceReader(.grokBot, result: reading(0.2))
+        let codex = FakeServiceReader(.codex, result: reading(0.4))
+        let poller = makePoller([grok, codex])
+        poller.isEnabled = { $0 != .codex }
+
+        await poller.refresh()
+
+        XCTAssertEqual(grok.reads, 1)
+        XCTAssertEqual(codex.reads, 0, "a hidden service is never read")
+        XCTAssertEqual(poller.states, [.grokBot: reading(0.2)])
+        XCTAssertEqual(poller.setUpServices(), [.grokBot, .codex], "still set up, so the Show menu can offer it back")
+
+        // Shown again, it is read at the next refresh.
+        poller.isEnabled = { _ in true }
+        await poller.refresh()
+        XCTAssertEqual(codex.reads, 1)
+        XCTAssertEqual(poller.states, [.grokBot: reading(0.2), .codex: reading(0.4)])
+    }
+
+    /// The timer reads through the same path, so a hidden service stays unread however it is refreshed.
+    func testDisabledServiceIsNotReadByTheTimerEither() async throws {
+        let codex = FakeServiceReader(.codex, result: reading(0.4))
+        let poller = makePoller([codex], interval: 0.05)
+        poller.isEnabled = { _ in false }
+
+        poller.start()
+        try await Task.sleep(nanoseconds: 300_000_000)   // six intervals
+        poller.stop()
+
+        XCTAssertEqual(codex.reads, 0)
+        XCTAssertTrue(poller.states.isEmpty)
+    }
+
+    /// A service hidden after it was read leaves nothing behind, as one whose files are gone does.
+    func testServiceHiddenAfterItWasReadKeepsNothingBehind() async {
+        let grok = FakeServiceReader(.grokBot, result: reading(0.2))
+        let codex = FakeServiceReader(.codex, result: reading(0.4))
+        let poller = makePoller([grok, codex])
+        var changes = 0
+        poller.onChange = { changes += 1 }
+        await poller.refresh()
+        XCTAssertEqual(poller.states.count, 2)
+
+        poller.isEnabled = { $0 != .codex }
+        await poller.refresh()
+
+        XCTAssertEqual(codex.reads, 1, "not read again")
+        XCTAssertEqual(poller.states, [.grokBot: reading(0.2)])
+        XCTAssertEqual(changes, 2, "dropping it is a change the app hears about")
+    }
+
+    /// The answer is asked for just before each read, not once at the start of a refresh: a service hidden
+    /// while an earlier one is being read is still not read by the refresh already under way.
+    func testEnabledIsAskedJustBeforeEachRead() async {
+        let grok = FakeServiceReader(.grokBot, result: reading(0.2))
+        let codex = FakeServiceReader(.codex, result: reading(0.4))
+        let poller = makePoller([grok, codex])
+        grok.holdsReads = true
+
+        let refresh = Task { await poller.refresh() }
+        await waitUntil { grok.reads == 1 }
+        poller.isEnabled = { $0 != .codex }   // hidden while Grok Bot is being read
+        grok.release()
+        await refresh.value
+
+        XCTAssertEqual(codex.reads, 0)
+        XCTAssertEqual(poller.states, [.grokBot: reading(0.2)])
+    }
+
     // MARK: - Overlapping refreshes
 
     func testConcurrentRefreshReadsEachReaderOnce() async {

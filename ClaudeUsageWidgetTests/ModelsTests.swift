@@ -71,35 +71,6 @@ final class ModelsTests: XCTestCase {
         XCTAssertNil(data.nextReset(after: now.addingTimeInterval(5 * 86400)))
     }
 
-    // MARK: - Menu bar layout preference
-
-    private func freshDefaults() -> UserDefaults {
-        let name = "io.rsla.ClaudeUsageWidget.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: name)!
-        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
-        return defaults
-    }
-
-    func test_menuBarLayout_defaultsToBoth_andRoundTrips() {
-        let defaults = freshDefaults()
-        XCTAssertEqual(MenuBarLayout.load(from: defaults), .both)
-        MenuBarLayout.week.save(to: defaults)
-        XCTAssertEqual(MenuBarLayout.load(from: defaults), .week)
-        defaults.set("sideways", forKey: MenuBarLayout.userDefaultsKey)
-        XCTAssertEqual(MenuBarLayout.load(from: defaults), .both)
-        XCTAssertEqual(MenuBarLayout.userDefaultsKey, "menuBarShows")
-        XCTAssertEqual(MenuBarLayout.allCases.map(\.menuTitle), ["Session and Week", "Session Only", "Week Only"])
-    }
-
-    func test_menuBarLayout_removeLegacyKeys_deletesRingMetricMode() {
-        let defaults = freshDefaults()
-        defaults.set("weekly", forKey: "ringMetricMode")
-        MenuBarLayout.week.save(to: defaults)
-        MenuBarLayout.removeLegacyKeys(from: defaults)
-        XCTAssertNil(defaults.object(forKey: "ringMetricMode"))
-        XCTAssertEqual(MenuBarLayout.load(from: defaults), .week)
-    }
-
     func test_bucketKind_labelsAndWeeklyFlag() {
         XCTAssertEqual(BucketKind.session.label, "5hr Session")
         XCTAssertEqual(BucketKind.weeklyAll.label, "Weekly")

@@ -194,15 +194,30 @@ final class StatusPresentationTests: XCTestCase {
     // MARK: - No numbers
 
     func testNoNumbersSaysWhy() {
-        let cases: [(ServiceState, String)] = [
-            (.notSignedIn(hint: "Not signed in"), "Sign in"),
-            (.loading, "Updating"),
-            (.unavailable(reason: "Can't reach claude.ai"), "Offline"),
+        // "Sign in" is a call to action, so it is drawn at full strength (dimmed it was 2.6:1 on a light menu bar).
+        // "Updating" and "Offline" say there is nothing to act on, and stay dimmed.
+        let cases: [(ServiceState, String, Bool)] = [
+            (.notSignedIn(hint: "Not signed in"), "Sign in", false),
+            (.loading, "Updating", true),
+            (.unavailable(reason: "Can't reach claude.ai"), "Offline", true),
         ]
-        for (state, title) in cases {
+        for (state, title, isDimmed) in cases {
             XCTAssertEqual(make([.claude: state]).content,
-                           StatusItemContent(logo: .claude, title: title, badge: .normal, isDimmed: true), "\(state)")
+                           StatusItemContent(logo: .claude, title: title, badge: .normal, isDimmed: isDimmed), "\(state)")
         }
+    }
+
+    /// Every way of being signed out says the same thing in the same strength, whatever the hint inside the panel says.
+    func testSignInIsNeverDimmedForAnyHintOrService() {
+        for hint in ["Not signed in", "Session expired", "No Claude plan on this account"] {
+            XCTAssertEqual(make([.claude: .notSignedIn(hint: hint)]).content,
+                           StatusItemContent(logo: .claude, title: "Sign in", badge: .normal, isDimmed: false), hint)
+        }
+        XCTAssertEqual(make([.grokBot: .notSignedIn(hint: "Open Grok Bot and sign in")]).content,
+                       StatusItemContent(logo: .grokBot, title: "Sign in", badge: .normal, isDimmed: false))
+        // Stale numbers are not a call to action: they stay dimmed.
+        XCTAssertTrue(make([.grokBot: grokBot(weekly: 0.90, minutesAgo: 25 * 60)]).content.isDimmed)
+        XCTAssertTrue(make([.claude: .reading(limits: [], readAt: now)]).content.isDimmed, "a reading with nothing in it is not either")
     }
 
     func testNoNumbersAnywhereShowsThePinnedOrFirstShownService() {
@@ -314,7 +329,7 @@ final class StatusPresentationTests: XCTestCase {
         ])
         // Numbers left over from before a sign-out are never shown.
         XCTAssertEqual(presentation(.signedOut(claudeCodeAvailable: true)).content,
-                       StatusItemContent(logo: .claude, title: "Sign in", badge: .normal, isDimmed: true))
+                       StatusItemContent(logo: .claude, title: "Sign in", badge: .normal, isDimmed: false))
         XCTAssertEqual(presentation(.unreachable).content,
                        StatusItemContent(logo: .claude, title: "Offline", badge: .normal, isDimmed: true))
     }

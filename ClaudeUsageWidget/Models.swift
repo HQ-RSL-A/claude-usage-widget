@@ -19,40 +19,6 @@ public enum RingColorState: Equatable {
     }
 }
 
-// MARK: - MenuBarLayout
-
-/// Which rings the menu bar item shows. Replaced the one-ring Session/Weekly toggle (`ringMetricMode`, v0.2.0 to v0.4.2).
-public enum MenuBarLayout: String, CaseIterable {
-    case both
-    case session
-    case week
-
-    public static let userDefaultsKey = "menuBarShows"
-
-    /// Keys earlier versions wrote. Not migrated: the old ring mode would hide the new two-ring layout.
-    static let legacyKeys = ["ringMetricMode"]
-
-    public static func load(from defaults: UserDefaults) -> MenuBarLayout {
-        defaults.string(forKey: userDefaultsKey).flatMap(MenuBarLayout.init(rawValue:)) ?? .both
-    }
-
-    public func save(to defaults: UserDefaults) {
-        defaults.set(rawValue, forKey: Self.userDefaultsKey)
-    }
-
-    public static func removeLegacyKeys(from defaults: UserDefaults) {
-        legacyKeys.forEach { defaults.removeObject(forKey: $0) }
-    }
-
-    public var menuTitle: String {
-        switch self {
-        case .both: return "Session and Week"
-        case .session: return "Session Only"
-        case .week: return "Week Only"
-        }
-    }
-}
-
 // MARK: - BucketKind
 
 /// The usage buckets the widget knows how to show, in display order. Raw values are the API keys.

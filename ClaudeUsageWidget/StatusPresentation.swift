@@ -79,8 +79,8 @@ struct StatusPresentation: Equatable {
     private static func candidates(of service: ServiceID, in state: ServiceState, now: Date) -> [Candidate] {
         guard let reading = rateReading(state) else { return [] }
         // Old by the service's own clock, or from before a reset: either way the number may no longer be true.
-        let isStale = now.timeIntervalSince(reading.readAt) > service.staleAfter
-            || reading.limits.contains { $0.resetsAt.map { $0 <= now } ?? false }
+        // The panel asks the same question of the same reading (`ServiceState.isCurrent`), so the two always agree.
+        let isStale = !state.isCurrent(service, now: now)
         return reading.limits.map { Candidate(service: service, limit: $0, isStale: isStale) }
     }
 
@@ -95,18 +95,23 @@ struct StatusPresentation: Equatable {
 
     // MARK: - No numbers
 
-    /// No service has a number to show. The item stands for one service and says what is wrong with it.
+    /// No service has a number to show. The item stands for one service and says what is wrong with it. "Sign in" is
+    /// a call to action, so it is drawn at full strength (dimmed it was 2.6:1 on a light menu bar); "Updating",
+    /// "Offline" and "No data" say there is nothing to act on, and stay dimmed like an old number.
     private static func noNumbers(for service: ServiceID, shown: [(id: ServiceID, state: ServiceState)], toolTip: String, text: UsageText) -> StatusPresentation {
         let state = shown.first { $0.id == service }?.state ?? .loading
         let title: String
+        var isDimmed = true
         switch state {
-        case .notSignedIn: title = "Sign in"
+        case .notSignedIn:
+            title = "Sign in"
+            isDimmed = false
         case .loading: title = "Updating"
         case .unavailable: title = "Offline"
         case .reading: title = "No data"   // a reading with no limit in it
         }
         return StatusPresentation(
-            content: StatusItemContent(logo: service, title: title, badge: .normal, isDimmed: true),
+            content: StatusItemContent(logo: service, title: title, badge: .normal, isDimmed: isDimmed),
             toolTip: toolTip,
             accessibilityValue: "\(service.displayName), \(text.lowercasedFirst(note(for: state)))"
         )

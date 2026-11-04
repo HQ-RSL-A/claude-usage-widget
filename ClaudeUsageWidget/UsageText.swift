@@ -46,11 +46,15 @@ struct UsageText {
 
     // MARK: - Status line
 
+    /// How long ago, in the biggest unit that fits: "3 min ago", "2 hr ago", "3 days ago". A reading from Grok Bot is
+    /// often days old, and "72 hr ago" makes a person do the sum.
     func age(of date: Date) -> String {
         let seconds = now.timeIntervalSince(date)
         if seconds < 60 { return "just now" }
         if seconds < 3600 { return "\(Int(seconds / 60)) min ago" }
-        return "\(Int(seconds / 3600)) hr ago"
+        if seconds < 24 * 3600 { return "\(Int(seconds / 3600)) hr ago" }
+        let days = Int(seconds / (24 * 3600))
+        return days == 1 ? "1 day ago" : "\(days) days ago"
     }
 
     func status(lastUpdated: Date?, isFetching: Bool, failure: String?) -> String {

@@ -86,6 +86,14 @@ final class MenuViewTests: XCTestCase {
         XCTAssertEqual(controller().headerTitle, "Usage Remaining")
     }
 
+    /// Opening the panel must not look every icon up again: the default source is the app's one shared cache.
+    func testThePanelsOwnIconsComeFromTheSharedCache() {
+        let vc = MenuViewController()
+        for service in ServiceID.allCases {
+            XCTAssertTrue(vc.panelIcon(service) === ServiceIcon.panelIcons.icon(for: service), "\(service)")
+        }
+    }
+
     func testEachSectionShowsItsServicesIcon() throws {
         let vc = controller()
         let icons: [ServiceID: NSImage] = Dictionary(uniqueKeysWithValues: ServiceID.allCases.map { ($0, NSImage(size: NSSize(width: 28, height: 28))) })
@@ -149,8 +157,40 @@ final class MenuViewTests: XCTestCase {
         let used = [0.0, 0.59, 0.60, 0.84, 0.85, 1.0]
         vc.update(services: [.grokBot: .reading(limits: used.map { ServiceLimit(label: "Weekly", percentUsed: $0, resetsAt: nil) }, readAt: clock)])
         XCTAssertEqual(vc.rows(for: .grokBot).map { $0[1] }, ["100%", "41%", "40%", "16%", "15%", "0%"])
-        let states: [RingColorState] = [.normal, .normal, .amber, .amber, .critical, .critical]
-        XCTAssertEqual(vc.rowPercentColors(for: .grokBot), states.map { StatusIcon.color(for: $0, foreground: .labelColor) })
+        // Under 60% used the number is plain text; from there it is amber, from 85% red. Which amber and red is
+        // the next test: they depend on the panel's appearance.
+        let colors = vc.rowPercentColors(for: .grokBot)
+        XCTAssertEqual(colors.prefix(2).map { $0 }, [.labelColor, .labelColor])
+        XCTAssertEqual(colors.dropFirst(2).prefix(2).map { Self.hex($0, in: .aqua) }, ["#B45309", "#B45309"])
+        XCTAssertEqual(colors.dropFirst(4).map { Self.hex($0, in: .aqua) }, ["#DC2626", "#DC2626"])
+    }
+
+    /// The menu bar's amber (#F59E0B) is about 2:1 against a light panel, too faint for a number, and Rahul's rule is
+    /// that colored digits must not get lost. So on a light panel the numbers use a darker amber and red, and on a
+    /// dark one the brighter pair. The menu bar's own colors do not change (`StatusIconTests` pins them).
+    func testPercentColorsFollowThePanelsAppearance() {
+        let vc = controller()
+        vc.shownServices = { [.claude, .grokBot] }
+        let limits = [0.2, 0.60, 0.85].map { ServiceLimit(label: "Weekly", percentUsed: $0, resetsAt: nil) }
+        vc.update(services: [.grokBot: .reading(limits: limits, readAt: clock)])
+        let colors = vc.rowPercentColors(for: .grokBot)
+
+        XCTAssertEqual(colors[1...].map { Self.hex($0, in: .aqua) }, ["#B45309", "#DC2626"], "light panel")
+        XCTAssertEqual(colors[1...].map { Self.hex($0, in: .darkAqua) }, ["#F59E0B", "#EF4444"], "dark panel")
+        // Plain numbers stay the system's label color in both.
+        XCTAssertEqual(Self.hex(colors[0], in: .aqua), Self.hex(.labelColor, in: .aqua))
+        XCTAssertEqual(Self.hex(colors[0], in: .darkAqua), Self.hex(.labelColor, in: .darkAqua))
+    }
+
+    /// The panel's colors as a hex string in one appearance, the way that appearance would draw them.
+    private static func hex(_ color: NSColor, in name: NSAppearance.Name) -> String {
+        var result = "?"
+        NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
+            guard let rgb = color.usingColorSpace(.sRGB) else { return }
+            func byte(_ value: CGFloat) -> Int { Int((value * 255).rounded()) }
+            result = String(format: "#%02X%02X%02X", byte(rgb.redComponent), byte(rgb.greenComponent), byte(rgb.blueComponent))
+        }
+        return result
     }
 
     func testNoLimitsSaysSo() {
@@ -200,9 +240,20 @@ final class MenuViewTests: XCTestCase {
         vc.renderTimes()
         XCTAssertEqual(vc.note(for: .grokBot), "Updated 16 min ago")
 
-        // Grok Bot is often days old: the note says so in hours.
+        // Grok Bot is often days old: the note says so in days.
         vc.update(services: [.grokBot: grokBot(readAt: clock.addingTimeInterval(-3 * 24 * 3600))])
-        XCTAssertEqual(vc.note(for: .grokBot), "Updated 72 hr ago")
+        XCTAssertEqual(vc.note(for: .grokBot), "Updated 3 days ago")
+    }
+
+    /// Tertiary text measured 1.9:1 against a light panel. The note under a stale reading is the one that says the
+    /// numbers cannot be trusted, so it is the secondary label color, the same as a hint that stands alone.
+    func testSectionNotesUseTheSecondaryLabelColor() {
+        let vc = controller()
+        vc.shownServices = { [.claude, .grokBot, .codex] }
+        vc.update(services: [.grokBot: grokBot(readAt: clock.addingTimeInterval(-40 * 60)), .codex: .notSignedIn(hint: codexHint)])
+        XCTAssertEqual(vc.note(for: .grokBot), "Updated 40 min ago")
+        XCTAssertEqual(vc.noteColor(for: .grokBot), .secondaryLabelColor, "under numbers")
+        XCTAssertEqual(vc.noteColor(for: .codex), .secondaryLabelColor, "on its own")
     }
 
     /// Claude's age lives in the footer; its section never carries the note.

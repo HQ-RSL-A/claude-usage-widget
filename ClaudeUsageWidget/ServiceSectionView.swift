@@ -25,6 +25,36 @@ enum PanelMetrics {
     static var textWidth: CGFloat { contentWidth - iconSide - iconGap }
 }
 
+// MARK: - PanelColors
+
+/// The colors of what's left in a row. The menu bar's amber (#F59E0B) and red (#EF4444) are right on a dark panel but
+/// only about 2:1 against a light one, too faint for a number (Rahul's rule: colored digits must not get lost). So the
+/// light panel gets a darker pair, picked while drawing, from the appearance the number is drawn in. The menu bar keeps
+/// its own colors (`StatusIcon.color`).
+enum PanelColors {
+    /// Under 60% used the number is plain text; from 60% it is amber and from 85% red.
+    static func percent(for state: RingColorState) -> NSColor {
+        switch state {
+        case .normal: return .labelColor
+        case .amber: return amber
+        case .critical: return red
+        }
+    }
+
+    private static let amber = dynamic(light: (0xB4, 0x53, 0x09), dark: (0xF5, 0x9E, 0x0B))   // #B45309 and #F59E0B
+    private static let red = dynamic(light: (0xDC, 0x26, 0x26), dark: (0xEF, 0x44, 0x44))     // #DC2626 and #EF4444
+
+    private static func dynamic(light: (Int, Int, Int), dark: (Int, Int, Int)) -> NSColor {
+        func color(_ rgb: (Int, Int, Int)) -> NSColor {
+            NSColor(srgbRed: CGFloat(rgb.0) / 255, green: CGFloat(rgb.1) / 255, blue: CGFloat(rgb.2) / 255, alpha: 1)
+        }
+        let (lightColor, darkColor) = (color(light), color(dark))
+        return NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? darkColor : lightColor
+        }
+    }
+}
+
 // MARK: - What a section says
 
 /// One limit as a row says it.
@@ -110,7 +140,7 @@ final class LimitRowView: NSView {
         // Digits of one width, so a number that changes never moves the ones beside it.
         percentField.stringValue = row.percent
         percentField.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-        percentField.textColor = StatusIcon.color(for: row.colorState, foreground: .labelColor)
+        percentField.textColor = PanelColors.percent(for: row.colorState)
         percentField.alignment = .right
 
         resetField.stringValue = row.reset
@@ -256,9 +286,11 @@ final class ServiceSectionView: NSView {
         }
 
         if let note = section.note {
-            // Under numbers it is a small aside; on its own it is all the section has to say.
+            // Under numbers it is a small aside; on its own it is all the section has to say. Either way it is the
+            // secondary label color: the age note says the numbers cannot be trusted, and tertiary text measured
+            // 1.9:1 against a light panel.
             let isAside = !section.rows.isEmpty
-            let label = Self.wrappingLabel(note, size: isAside ? 10 : 11, color: isAside ? .tertiaryLabelColor : .secondaryLabelColor)
+            let label = Self.wrappingLabel(note, size: isAside ? 10 : 11, color: .secondaryLabelColor)
             noteLabel = label
             content.addArrangedSubview(label)
         }
@@ -320,6 +352,7 @@ final class ServiceSectionView: NSView {
     var rowVoiceOverTexts: [String?] { rowViews.map(\.voiceOverText) }
     var rowPercentColors: [NSColor] { rowViews.map(\.percentColor) }
     var noteText: String? { noteLabel?.stringValue }
+    var noteColor: NSColor? { noteLabel?.textColor }
     var promptTitle: String { titleLabel?.stringValue ?? "" }
     var promptSubtitle: String { subtitleLabel?.stringValue ?? "" }
     var signInButtonTitles: [String] { buttons.map(\.title) }

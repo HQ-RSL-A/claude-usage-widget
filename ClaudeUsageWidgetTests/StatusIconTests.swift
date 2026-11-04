@@ -18,6 +18,22 @@ final class StatusIconTests: XCTestCase {
     }
     private let red = (r: 239, g: 68, b: 68)      // #EF4444
 
+    // MARK: - The item's button
+
+    /// The logo leads the title, the text starts at the left so the logo and the number never slide as the title
+    /// changes, and the font is the menu bar's own. VoiceOver reads the item as "Usage Remaining": it shows
+    /// whichever service is lowest now, so it is not named after Claude.
+    func testButtonIsSetUpForAFixedLogoAndTitle() {
+        let button = NSButton()
+        StatusIcon.configure(button)
+        XCTAssertEqual(button.imagePosition, .imageLeading)
+        XCTAssertEqual(button.imageScaling, .scaleProportionallyDown)
+        XCTAssertEqual(button.alignment, .left)
+        XCTAssertEqual(button.font, StatusIcon.titleFont())
+        XCTAssertEqual(button.accessibilityLabel(), "Usage Remaining")
+        XCTAssertEqual(StatusIcon.accessibilityLabel, "Usage Remaining")
+    }
+
     // MARK: - Template or not
 
     /// Without a badge the image is the bare mark, a template the system tints like every other menu bar icon.

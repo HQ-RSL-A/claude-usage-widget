@@ -13,6 +13,22 @@ enum StatusIcon {
     private static let badgeCenter = CGPoint(x: 13, y: 13)   // in the 16 pt mark, counted from the bottom left
     private static let badgeClearance: CGFloat = 1.5         // the ring cut clear around the dot
 
+    // MARK: - Button
+
+    /// VoiceOver reads the item as "Usage Remaining", its value being the limit it shows. It is not named after Claude:
+    /// the item shows whichever service is lowest.
+    static let accessibilityLabel = "Usage Remaining"
+
+    /// How the status item's button lays out its mark and title. The logo leads the title, and the text starts at the
+    /// left: with the padded title (`attributedTitle`), the logo and the number then stay put whatever is shown.
+    static func configure(_ button: NSButton) {
+        button.imageScaling = .scaleProportionallyDown
+        button.imagePosition = .imageLeading
+        button.alignment = .left
+        button.font = titleFont()
+        button.setAccessibilityLabel(accessibilityLabel)
+    }
+
     // MARK: - Size and font
 
     /// The menu bar's own size, with every digit the same width so the number never jiggles as it changes.
