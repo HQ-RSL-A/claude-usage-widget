@@ -1,126 +1,25 @@
 import AppKit
 
-// MARK: - ProgressBarView
+// MARK: - IconButton
 
-/// Custom thin progress bar drawn with Core Graphics. 4pt tall, 2pt corner radius.
-/// The filled part is what's used; color adapts to the usage threshold (normal/amber/critical).
-class ProgressBarView: NSView {
-
-    var progress: Double = 0.0 {
-        didSet { needsDisplay = true }
-    }
-
-    var colorState: RingColorState = .normal {
-        didSet { needsDisplay = true }
-    }
-
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: NSView.noIntrinsicMetric, height: 4)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let trackColor = NSColor.separatorColor
-        let fillColor = StatusIcon.color(for: colorState, foreground: .labelColor)
-        let radius: CGFloat = 2.0
-
-        // Track
-        let trackPath = NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius)
-        trackColor.setFill()
-        trackPath.fill()
-
-        // Fill
-        let clampedProgress = min(max(progress, 0.0), 1.0)
-        guard clampedProgress > 0 else { return }
-        let fillWidth = bounds.width * clampedProgress
-        let fillRect = NSRect(x: 0, y: 0, width: fillWidth, height: bounds.height)
-        let fillPath = NSBezierPath(roundedRect: fillRect, xRadius: radius, yRadius: radius)
-        fillColor.setFill()
-        fillPath.fill()
-    }
+/// A borderless button that is exactly the size it is given: AppKit's own leaves part of it outside the
+/// layout rect, which would leave only part of the space around the dots to click.
+private final class IconButton: NSButton {
+    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets() }
 }
 
-// MARK: - UsageRowView
+// MARK: - LinkButton
 
-class UsageRowView: NSView {
-
-    private let nameLabel: NSTextField
-    private let progressBar: ProgressBarView
-    private let percentLabel: NSTextField
-    private let detailLabel: NSTextField
-
-    init(label: String) {
-        nameLabel = NSTextField(labelWithString: label)
-        progressBar = ProgressBarView()
-        percentLabel = NSTextField(labelWithString: "")
-        detailLabel = NSTextField(labelWithString: "")
-        super.init(frame: .zero)
-        setupUI()
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) not implemented") }
-
-    var percentText: String { percentLabel.stringValue }
-    var detailText: String { detailLabel.stringValue }
-
-    private func setupUI() {
-        nameLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        nameLabel.textColor = .secondaryLabelColor
-        nameLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        progressBar.translatesAutoresizingMaskIntoConstraints = false
-
-        percentLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        percentLabel.textColor = .labelColor
-        percentLabel.alignment = .right
-        percentLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        detailLabel.font = .systemFont(ofSize: 10, weight: .regular)
-        detailLabel.textColor = .tertiaryLabelColor
-        detailLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        // Top row: name + percent
-        let topRow = NSStackView(views: [nameLabel, percentLabel])
-        topRow.orientation = .horizontal
-        topRow.alignment = .lastBaseline
-        topRow.distribution = .fill
-        topRow.translatesAutoresizingMaskIntoConstraints = false
-
-        // Main stack: top row, progress bar, detail (hidden when empty)
-        let stack = NSStackView(views: [topRow, progressBar, detailLabel])
-        stack.orientation = .vertical
-        stack.spacing = 3
-        stack.alignment = .leading
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: topAnchor),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            topRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            progressBar.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            progressBar.heightAnchor.constraint(equalToConstant: 4),
-        ])
-    }
-
-    /// `percentText` says what's left; the bar fills with what's used, so its empty part is what's left.
-    func update(percentText: String, used: Double, colorState: RingColorState, detail: String) {
-        progressBar.progress = used
-        progressBar.colorState = colorState
-        percentLabel.stringValue = percentText
-        setDetail(detail)
-    }
-
-    func setDetail(_ detail: String) {
-        detailLabel.stringValue = detail
-        detailLabel.isHidden = detail.isEmpty
-    }
+/// The quiet "Sign in inside the app" link. A borderless button draws its words a little inside its frame;
+/// this one lines them up with the edge of the column.
+private final class LinkButton: NSButton {
+    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets(top: 0, left: 2, bottom: 0, right: 0) }
 }
 
 // MARK: - MenuViewController
 
+/// The popover: a header with a "..." menu, one section per shown service, and a footer.
+/// Claude is shown from its own sign-in and numbers; the other services come in through `update(services:)`.
 class MenuViewController: NSViewController {
 
     // Callbacks set by AppDelegate
@@ -130,299 +29,182 @@ class MenuViewController: NSViewController {
     var onUseClaudeCode: (() -> Void)?
     var onSignInInsideApp: (() -> Void)?
     var onCancelSignIn: (() -> Void)?
-    var onChangeLayout: ((MenuBarLayout) -> Void)?
     var onToggleOpenAtLogin: (() -> Void)?
+    var onToggleService: ((ServiceID) -> Void)?
+    var onChooseMenuBar: ((MenuBarChoice) -> Void)?
 
-    // Read each time the settings menu opens
-    var currentLayout: () -> MenuBarLayout = { .both }
+    // Read each time the panel is drawn or the "..." menu opens
     var isOpenAtLoginEnabled: () -> Bool = { false }
+    var currentMenuBarChoice: () -> MenuBarChoice = { .lowest }
+    /// The services with a section, in panel order. Never empty: an empty panel is a dead end.
+    var shownServices: () -> [ServiceID] = { [.claude] }
+    /// The services worth offering in the "Show" menu: the ones set up on this Mac.
+    var setUpServices: () -> [ServiceID] = { [.claude] }
+    var panelIcon: (ServiceID) -> NSImage = { ServiceIcon.panelIcon(for: $0) } {
+        didSet { renderedSections = nil }
+    }
 
     /// Plain words for the current moment; tests swap in a fixed clock.
     var makeText: () -> UsageText = { UsageText() }
 
-    /// Shown under the empty-state title until the next sign-in attempt.
+    /// Shown under the sign-in title until the next sign-in attempt.
     var signInMessage: String?
-
-    private let browserButton = NSButton(title: "Sign in with your browser", target: nil, action: nil)
-    private let claudeCodeButton = NSButton(title: "Use Claude Code's sign-in", target: nil, action: nil)
-    private let insideAppButton = NSButton(title: "Sign in inside the app", target: nil, action: nil)
-    private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
-    private var buttonStack: NSStackView!
 
     // MARK: - State
 
     private var state: AuthState = .unknown
     private var lastData: UsageData?
+    private var otherServices: [ServiceID: ServiceState] = [:]
     private var isFetching = false
     private var failure: String?
-    /// Rows whose reset text moves with the clock.
-    private var bucketRows: [(row: UsageRowView, bucket: UsageBucket)] = []
+    private var renderedSections: [PanelSection]?
     private var clockTimer: Timer?
+
+    /// A reading this old gets a note saying so, whichever service it is from.
+    private static let noteAfter: TimeInterval = 15 * 60
+    /// The "..." button is wider than its dots, so it hangs this far past the margin and the dots end where the columns end.
+    private static let dotsOverhang: CGFloat = 6
+    /// All the click target the header has to give the dots.
+    private static let dotsSize = NSSize(width: 28, height: 22)
+    /// The space between the header, the sections and the footer, and around the whole panel.
+    private static let spacing: CGFloat = 10
+    private static let topInset: CGFloat = 12
+    private static let bottomInset: CGFloat = 10
 
     // MARK: - UI Elements
 
-    private let titleLabel = NSTextField(labelWithString: "Claude Usage")
-    private let subtitleLabel = NSTextField(labelWithString: "")
-    private let emptyTitleLabel = NSTextField(labelWithString: "Not signed in")
-    private let emptySubtitleLabel = NSTextField(labelWithString: "Sign in to see your usage")
-    private let refreshButton = MenuViewController.iconButton(symbol: "arrow.clockwise", label: "Refresh")
+    private let titleLabel = NSTextField(labelWithString: "Usage Remaining")
     private let spinner = NSProgressIndicator()
-    private let settingsButton = MenuViewController.iconButton(symbol: "gearshape", label: "Settings")
-    private let rowsStack = NSStackView()
+    private let moreButton = MenuViewController.iconButton(symbol: "ellipsis", label: "More")
+    private let sectionsStack = NSStackView()
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
-    private let authButton = NSButton(title: "Sign Out", target: nil, action: nil)
-    private let quitButton = NSButton(title: "Quit", target: nil, action: nil)
-    private let separator = NSBox()
     private let versionLabel = NSTextField(labelWithString: "v" + MenuViewController.appVersion)
 
     static var appVersion: String { AppInfo.version }
 
-    // Containers for toggling visibility
-    private var usageStack: NSStackView!
-    private var emptyStateView: NSView!
-
     // MARK: - View Lifecycle
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 280))
+        view = NSView(frame: NSRect(x: 0, y: 0, width: PanelMetrics.width, height: 160))
         view.wantsLayer = true
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
-        // Apply deferred auth state (updateAuthState may have been called before view loaded)
-        applyAuthState()
+        // Whatever came in before the view loaded is applied now.
+        reload()
     }
 
     // MARK: - Setup
 
     private static func iconButton(symbol: String, label: String) -> NSButton {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label) ?? NSImage()
-        let button = NSButton(image: image, target: nil, action: nil)
+        let button = IconButton(image: image, target: nil, action: nil)
         button.isBordered = false
         button.imagePosition = .imageOnly
-        button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+        button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
         button.contentTintColor = .secondaryLabelColor
         button.toolTip = label
         button.setAccessibilityLabel(label)
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.setContentHuggingPriority(.required, for: .horizontal)
         return button
     }
 
     private func setupUI() {
-        // Title
+        // Header: the title, a spinner while a fetch runs, and the "..." button
         titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         titleLabel.textColor = .labelColor
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        // Subtitle ("Signed in as ...")
-        subtitleLabel.font = .systemFont(ofSize: 10, weight: .regular)
-        subtitleLabel.textColor = .tertiaryLabelColor
-        subtitleLabel.isHidden = true
-        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let titleStack = NSStackView(views: [titleLabel, subtitleLabel])
-        titleStack.orientation = .vertical
-        titleStack.alignment = .leading
-        titleStack.spacing = 1
-        titleStack.translatesAutoresizingMaskIntoConstraints = false
-
-        // Refresh, its spinner while a fetch runs, and settings
-        refreshButton.target = self
-        refreshButton.action = #selector(refreshTapped)
-        settingsButton.target = self
-        settingsButton.action = #selector(settingsTapped(_:))
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
         spinner.isHidden = true
         spinner.translatesAutoresizingMaskIntoConstraints = false
 
-        let controls = NSStackView(views: [spinner, refreshButton, settingsButton])
-        controls.orientation = .horizontal
-        controls.alignment = .centerY
-        controls.spacing = 10
-        controls.translatesAutoresizingMaskIntoConstraints = false
-        controls.setContentHuggingPriority(.required, for: .horizontal)
+        moreButton.target = self
+        moreButton.action = #selector(moreTapped(_:))
+        moreButton.sendAction(on: .leftMouseDown)   // a menu opens as the mouse goes down, like a pull-down button
 
-        // Header row
-        let headerRow = NSStackView(views: [titleStack, controls])
-        headerRow.orientation = .horizontal
-        headerRow.alignment = .centerY
-        headerRow.distribution = .fill
-        headerRow.translatesAutoresizingMaskIntoConstraints = false
+        let header = NSView()
+        header.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(titleLabel)
+        header.addSubview(spinner)
+        header.addSubview(moreButton)
+        NSLayoutConstraint.activate([
+            header.heightAnchor.constraint(equalToConstant: Self.dotsSize.height),
+            titleLabel.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+            titleLabel.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            moreButton.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: Self.dotsOverhang),
+            moreButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            moreButton.widthAnchor.constraint(equalToConstant: Self.dotsSize.width),
+            moreButton.heightAnchor.constraint(equalToConstant: Self.dotsSize.height),
+            spinner.trailingAnchor.constraint(equalTo: moreButton.leadingAnchor),
+            spinner.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+        ])
 
-        // Usage rows (rebuilt from data on every update)
-        rowsStack.orientation = .vertical
-        rowsStack.alignment = .leading
-        rowsStack.spacing = 10
-        rowsStack.translatesAutoresizingMaskIntoConstraints = false
+        // Sections (rebuilt whenever what they say changes)
+        sectionsStack.orientation = .vertical
+        sectionsStack.alignment = .leading
+        sectionsStack.spacing = Self.spacing
+        sectionsStack.translatesAutoresizingMaskIntoConstraints = false
 
-        // Status line: updated, updating, or couldn't refresh (may wrap to two lines)
-        statusLabel.font = .systemFont(ofSize: 10, weight: .regular)
+        // Footer: Claude's status line on the left, the version on the right
+        statusLabel.font = .systemFont(ofSize: 10)
         statusLabel.textColor = .tertiaryLabelColor
         statusLabel.maximumNumberOfLines = 2
-        statusLabel.preferredMaxLayoutWidth = 272
+        statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        // Usage stack (visible when signed in)
-        usageStack = NSStackView(views: [rowsStack, statusLabel])
-        usageStack.orientation = .vertical
-        usageStack.alignment = .leading
-        usageStack.spacing = 10
-        usageStack.translatesAutoresizingMaskIntoConstraints = false
-
-        // Empty state (visible when signed out)
-        emptyStateView = createEmptyStateView()
-        emptyStateView.translatesAutoresizingMaskIntoConstraints = false
-        emptyStateView.isHidden = true
-
-        // Separator
-        separator.boxType = .separator
-        separator.translatesAutoresizingMaskIntoConstraints = false
-
-        // Auth button (Sign Out)
-        authButton.bezelStyle = .inline
-        authButton.isBordered = false
-        authButton.font = .systemFont(ofSize: 11, weight: .regular)
-        authButton.contentTintColor = .secondaryLabelColor
-        authButton.target = self
-        authButton.action = #selector(authTapped)
-        authButton.translatesAutoresizingMaskIntoConstraints = false
-
-        // Quit button
-        quitButton.bezelStyle = .inline
-        quitButton.isBordered = false
-        quitButton.font = .systemFont(ofSize: 11, weight: .regular)
-        quitButton.contentTintColor = .secondaryLabelColor
-        quitButton.target = self
-        quitButton.action = #selector(quitTapped)
-        quitButton.translatesAutoresizingMaskIntoConstraints = false
-
-        // Version label
-        versionLabel.font = .systemFont(ofSize: 10, weight: .regular)
+        versionLabel.font = .systemFont(ofSize: 10)
         versionLabel.textColor = .tertiaryLabelColor
+        versionLabel.setContentHuggingPriority(.required, for: .horizontal)
+        versionLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         versionLabel.translatesAutoresizingMaskIntoConstraints = false
+        statusLabel.preferredMaxLayoutWidth = PanelMetrics.contentWidth - versionLabel.intrinsicContentSize.width - 8
 
-        // Footer row
-        let spacer = NSView()
-        spacer.translatesAutoresizingMaskIntoConstraints = false
-        let footerRow = NSStackView(views: [versionLabel, spacer, authButton, quitButton])
-        footerRow.orientation = .horizontal
-        footerRow.alignment = .centerY
-        footerRow.spacing = 12
-        footerRow.translatesAutoresizingMaskIntoConstraints = false
-
-        // Main stack
-        let mainStack = NSStackView(views: [
-            headerRow,
-            usageStack,
-            emptyStateView,
-            separator,
-            footerRow,
+        let footer = NSView()
+        footer.translatesAutoresizingMaskIntoConstraints = false
+        footer.addSubview(statusLabel)
+        footer.addSubview(versionLabel)
+        NSLayoutConstraint.activate([
+            statusLabel.topAnchor.constraint(equalTo: footer.topAnchor),
+            statusLabel.bottomAnchor.constraint(equalTo: footer.bottomAnchor),
+            statusLabel.leadingAnchor.constraint(equalTo: footer.leadingAnchor),
+            versionLabel.trailingAnchor.constraint(equalTo: footer.trailingAnchor),
+            versionLabel.firstBaselineAnchor.constraint(equalTo: statusLabel.firstBaselineAnchor),
+            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: versionLabel.leadingAnchor, constant: -8),
         ])
+
+        let headerSeparator = Self.separator()
+        let footerSeparator = Self.separator()
+        let mainStack = NSStackView(views: [header, headerSeparator, sectionsStack, footerSeparator, footer])
         mainStack.orientation = .vertical
         mainStack.alignment = .leading
         mainStack.distribution = .fill
-        mainStack.spacing = 10
+        mainStack.spacing = Self.spacing
         mainStack.translatesAutoresizingMaskIntoConstraints = false
-
-        // Full-width constraints
-        separator.widthAnchor.constraint(equalTo: mainStack.widthAnchor).isActive = true
-        headerRow.widthAnchor.constraint(equalTo: mainStack.widthAnchor).isActive = true
-        footerRow.widthAnchor.constraint(equalTo: mainStack.widthAnchor).isActive = true
-        usageStack.widthAnchor.constraint(equalTo: mainStack.widthAnchor).isActive = true
-        emptyStateView.widthAnchor.constraint(equalTo: mainStack.widthAnchor).isActive = true
-        rowsStack.widthAnchor.constraint(equalTo: usageStack.widthAnchor).isActive = true
+        for full in [header, headerSeparator, sectionsStack, footerSeparator, footer] {
+            full.widthAnchor.constraint(equalTo: mainStack.widthAnchor).isActive = true
+        }
 
         view.addSubview(mainStack)
-
         NSLayoutConstraint.activate([
-            mainStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
-            mainStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
-            mainStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
-            mainStack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
-            view.widthAnchor.constraint(equalToConstant: 300),
+            mainStack.topAnchor.constraint(equalTo: view.topAnchor, constant: Self.topInset),
+            mainStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: PanelMetrics.margin),
+            mainStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -PanelMetrics.margin),
+            mainStack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -Self.bottomInset),
+            view.widthAnchor.constraint(equalToConstant: PanelMetrics.width),
         ])
     }
 
-    private func createEmptyStateView() -> NSView {
-        let container = NSView()
-
-        let ringSymbol = NSTextField(labelWithString: "○")
-        ringSymbol.font = .systemFont(ofSize: 28, weight: .ultraLight)
-        ringSymbol.textColor = .tertiaryLabelColor
-        ringSymbol.alignment = .center
-        ringSymbol.translatesAutoresizingMaskIntoConstraints = false
-
-        emptyTitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
-        emptyTitleLabel.textColor = .secondaryLabelColor
-        emptyTitleLabel.alignment = .center
-        emptyTitleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        emptySubtitleLabel.font = .systemFont(ofSize: 11, weight: .regular)
-        emptySubtitleLabel.textColor = .tertiaryLabelColor
-        emptySubtitleLabel.alignment = .center
-        emptySubtitleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        // Sign-in routes; which ones show depends on the state
-        for (button, action) in [(browserButton, #selector(browserTapped)), (claudeCodeButton, #selector(claudeCodeTapped)), (cancelButton, #selector(cancelTapped))] {
-            button.bezelStyle = .rounded
-            button.controlSize = .regular
-            button.target = self
-            button.action = action
-            button.translatesAutoresizingMaskIntoConstraints = false
-        }
-        browserButton.keyEquivalent = "\r"
-        insideAppButton.isBordered = false
-        insideAppButton.font = .systemFont(ofSize: 10, weight: .regular)
-        insideAppButton.contentTintColor = .secondaryLabelColor
-        insideAppButton.target = self
-        insideAppButton.action = #selector(insideAppTapped)
-        insideAppButton.translatesAutoresizingMaskIntoConstraints = false
-
-        buttonStack = NSStackView(views: [])
-        buttonStack.orientation = .vertical
-        buttonStack.alignment = .centerX
-        buttonStack.spacing = 6
-        buttonStack.translatesAutoresizingMaskIntoConstraints = false
-
-        let stack = NSStackView(views: [ringSymbol, emptyTitleLabel, emptySubtitleLabel, buttonStack])
-        stack.orientation = .vertical
-        stack.alignment = .centerX
-        stack.spacing = 4
-        stack.setCustomSpacing(12, after: emptySubtitleLabel)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        container.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 24),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -24),
-            stack.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-        ])
-
-        return container
-    }
-
-    // MARK: - Read-only state (for tests and diagnostics)
-
-    var rowCount: Int { rowsStack.arrangedSubviews.count }
-    var usageRowCount: Int { rowsStack.arrangedSubviews.filter { $0 is UsageRowView }.count }
-    var rowPercentTexts: [String] { rowsStack.arrangedSubviews.compactMap { ($0 as? UsageRowView)?.percentText } }
-    var rowDetailTexts: [String] { rowsStack.arrangedSubviews.compactMap { ($0 as? UsageRowView)?.detailText } }
-    var statusText: String { statusLabel.stringValue }
-    var isShowingSpinner: Bool { !spinner.isHidden }
-    var isShowingUsage: Bool { !usageStack.isHidden }
-    var visibleSignInButtons: [String] { buttonStack.arrangedSubviews.compactMap { ($0 as? NSButton)?.title } }
-    var subtitleText: String { subtitleLabel.isHidden ? "" : subtitleLabel.stringValue }
-    var footerAuthTitle: String? { authButton.isHidden ? nil : authButton.title }
-    var emptyTitle: String { emptyTitleLabel.stringValue }
-    var emptySubtitle: String { emptySubtitleLabel.stringValue }
-    var containsSegmentedControl: Bool {
-        func search(_ view: NSView) -> Bool { view is NSSegmentedControl || view.subviews.contains(where: search) }
-        return search(view)
+    private static func separator() -> NSBox {
+        let box = NSBox()
+        box.boxType = .separator
+        box.translatesAutoresizingMaskIntoConstraints = false
+        return box
     }
 
     // MARK: - Public Update Methods
@@ -431,62 +213,37 @@ class MenuViewController: NSViewController {
         lastData = data
         isFetching = false
         failure = nil
-        rebuildRows(from: data)
-        renderStatus()
-        resizeToFit()
+        reload()
     }
 
-    private func rebuildRows(from data: UsageData) {
-        rowsStack.arrangedSubviews.forEach {
-            rowsStack.removeArrangedSubview($0)
-            $0.removeFromSuperview()
-        }
-        bucketRows = []
-        let text = makeText()
-        for bucket in data.buckets {
-            let row = UsageRowView(label: bucket.kind.label)
-            row.update(percentText: text.percentLeft(bucket), used: bucket.percentUsed, colorState: bucket.barColorState, detail: text.detail(bucket))
-            addRow(row)
-            bucketRows.append((row, bucket))
-        }
-        if let extra = data.extraUsage, extra.isEnabled, let used = extra.percentUsed {
-            let row = UsageRowView(label: "Extra usage")
-            row.update(percentText: "\(UsageBucket.percentLeft(forUsed: used))% left", used: used, colorState: .from(percent: used), detail: "Monthly budget")
-            addRow(row)
-        }
-        if rowsStack.arrangedSubviews.isEmpty {
-            let label = NSTextField(labelWithString: "No usage limits reported for this plan")
-            label.font = .systemFont(ofSize: 11, weight: .regular)
-            label.textColor = .secondaryLabelColor
-            rowsStack.addArrangedSubview(label)
-        }
+    /// What the other services (Grok Bot, Codex) have to show. It is the whole list: a service missing from it has no section.
+    /// Claude is not taken from here; it is shown from its own sign-in and numbers.
+    func update(services: [ServiceID: ServiceState]) {
+        otherServices = services
+        reload()
     }
 
-    private func addRow(_ row: UsageRowView) {
-        row.translatesAutoresizingMaskIntoConstraints = false
-        rowsStack.addArrangedSubview(row)
-        row.widthAnchor.constraint(equalTo: rowsStack.widthAnchor).isActive = true
-    }
-
-    /// Reset countdowns and the status line, worked out again for the current time.
+    /// The times and ages, worked out again for the current time. Anything that did not change is left alone.
     func renderTimes() {
-        let text = makeText()
-        for entry in bucketRows { entry.row.setDetail(text.detail(entry.bucket)) }
-        renderStatus()
-        resizeToFit()
+        reload()
     }
 
-    private func renderStatus() {
-        statusLabel.stringValue = makeText().status(lastUpdated: lastData?.lastUpdated, isFetching: isFetching, failure: failure)
-        spinner.isHidden = !isFetching
-        refreshButton.isHidden = isFetching
-        if isFetching { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
+    func showLoading() {
+        isFetching = true
+        reload()
     }
 
-    /// NSPopover tracks preferredContentSize, so two rows and five rows both fit.
-    private func resizeToFit() {
-        view.layoutSubtreeIfNeeded()
-        preferredContentSize = NSSize(width: 300, height: view.fittingSize.height)
+    func showError(_ message: String) {
+        isFetching = false
+        failure = message
+        reload()
+    }
+
+    func render(state: AuthState) {
+        self.state = state
+        // A fetch cut short by an expiry or a sign-out never reports back.
+        if case .signedIn = state {} else { isFetching = false }
+        reload()
     }
 
     /// Call when the popover is about to show: the times catch up, then keep moving while it stays open.
@@ -503,44 +260,118 @@ class MenuViewController: NSViewController {
         clockTimer = nil
     }
 
-    func render(state: AuthState) {
-        self.state = state
-        // View may not be loaded yet (popover is lazy); applyAuthState runs in viewDidLoad
+    // MARK: - Drawing
+
+    /// The view may not be loaded yet (the popover is lazy); `viewDidLoad` draws what came in before.
+    private func reload() {
         guard isViewLoaded else { return }
-        applyAuthState()
+        let text = makeText()
+        let sections = makeSections(text: text)
+        if sections != renderedSections {
+            renderedSections = sections
+            rebuildSections(sections)
+        }
+        renderFooter(text: text)
+        resizeToFit()
     }
 
-    private func applyAuthState() {
-        switch state {
-        case .signedIn(let source, let profile):
-            usageStack.isHidden = false
-            emptyStateView.isHidden = true
-            refreshButton.isEnabled = true
-            setSubtitle(Self.subtitle(for: source, profile: profile))
-            setFooter(authTitle: "Sign Out")
-        case .unknown:
-            showEmpty(title: "Checking sign-in...", subtitle: "One moment", buttons: [], refreshEnabled: false, authTitle: nil)
-        case .unreachable:
-            showEmpty(title: "Could not reach claude.ai", subtitle: "Check your connection and refresh", buttons: [], refreshEnabled: true, authTitle: nil)
-        case .signedOut(let claudeCodeAvailable):
-            var buttons = [browserButton]
-            if claudeCodeAvailable { buttons.append(claudeCodeButton) }
-            buttons.append(insideAppButton)
-            showEmpty(title: "Not signed in", subtitle: signInMessage ?? "Your browser does the signing in", buttons: buttons, refreshEnabled: false, authTitle: nil)
-        case .signingIn:
-            showEmpty(title: "Waiting for your browser...", subtitle: "Approve the sign-in in the tab that opened", buttons: [cancelButton], refreshEnabled: false, authTitle: nil)
-        case .sessionExpired(let source):
-            let buttons: [NSButton]
-            switch source {
-            case .ownToken: buttons = [browserButton]
-            case .claudeCode: buttons = [claudeCodeButton, browserButton]
-            case .webSession: buttons = [insideAppButton, browserButton]
-            }
-            showEmpty(title: "Session expired", subtitle: "Sign in again to keep tracking usage", buttons: buttons, refreshEnabled: false, authTitle: "Sign Out")
-        case .noChatOrg:
-            showEmpty(title: "No Claude plan on this account", subtitle: "This account only has API access", buttons: [browserButton], refreshEnabled: false, authTitle: "Sign Out")
+    private func rebuildSections(_ sections: [PanelSection]) {
+        sectionsStack.arrangedSubviews.forEach {
+            sectionsStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
         }
-        resizeToFit()
+        for (index, section) in sections.enumerated() {
+            if index > 0 { addArranged(Self.separator()) }
+            addArranged(ServiceSectionView(section: section, icon: panelIcon(section.service), makeButton: makeSignInButton))
+        }
+    }
+
+    private func addArranged(_ view: NSView) {
+        sectionsStack.addArrangedSubview(view)
+        view.widthAnchor.constraint(equalTo: sectionsStack.widthAnchor).isActive = true
+    }
+
+    private func renderFooter(text: UsageText) {
+        if case .signedIn = state, shownServices().contains(.claude) {
+            statusLabel.stringValue = text.status(lastUpdated: lastData?.lastUpdated, isFetching: isFetching, failure: failure)
+        } else {
+            statusLabel.stringValue = ""
+        }
+        spinner.isHidden = !isFetching
+        if isFetching { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
+    }
+
+    /// NSPopover tracks preferredContentSize, so two rows and ten rows both fit.
+    private func resizeToFit() {
+        view.layoutSubtreeIfNeeded()
+        preferredContentSize = NSSize(width: PanelMetrics.width, height: view.fittingSize.height)
+    }
+
+    // MARK: - What each section says
+
+    private func makeSections(text: UsageText) -> [PanelSection] {
+        shownServices().compactMap { service in
+            if service == .claude { return claudeSection(text: text) }
+            return otherServices[service].map { section(for: service, state: $0, text: text) }
+        }
+    }
+
+    /// Claude's own sign-in decides what its section says; its numbers count only while it is signed in.
+    private func claudeSection(text: UsageText) -> PanelSection {
+        var section = PanelSection(service: .claude, toolTip: claudeToolTip())
+        guard case .signedIn = state else {
+            section.signIn = signInPrompt()
+            return section
+        }
+        guard let data = lastData else {
+            section.note = failure != nil && !isFetching ? "Couldn't load usage" : "Loading..."
+            return section
+        }
+        fill(&section, limits: data.serviceLimits, readAt: data.lastUpdated, text: text)
+        return section
+    }
+
+    private func section(for service: ServiceID, state: ServiceState, text: UsageText) -> PanelSection {
+        var section = PanelSection(service: service, toolTip: service.displayName)
+        switch state {
+        case .loading: section.note = "Loading..."
+        case .reading(let limits, let readAt): fill(&section, limits: limits, readAt: readAt, text: text)
+        case .notSignedIn(let hint): section.note = hint
+        case .unavailable(let reason): section.note = reason
+        }
+        return section
+    }
+
+    private func fill(_ section: inout PanelSection, limits: [ServiceLimit], readAt: Date, text: UsageText) {
+        section.rows = limits.map { row(for: $0, text: text) }
+        section.isDimmed = Self.isOutOfDate(section.service, limits: limits, readAt: readAt, now: text.now)
+        if limits.isEmpty {
+            section.note = "No usage limits reported for this plan"
+        } else if section.service != .claude, text.now.timeIntervalSince(readAt) > Self.noteAfter {
+            // Claude's age is in the footer; the other services' is here, under their numbers.
+            section.note = "Updated \(text.age(of: readAt))"
+        }
+    }
+
+    private func row(for limit: ServiceLimit, text: UsageText) -> PanelRow {
+        PanelRow(label: limit.label,
+                 percent: "\(limit.percentLeft)%",
+                 reset: text.shortReset(limit.resetsAt),
+                 toolTip: limit.isBudget ? "Monthly budget" : text.fullReset(limit.resetsAt),
+                 colorState: limit.colorState)
+    }
+
+    /// Numbers are out of date when they are older than their service keeps them current, or were read before
+    /// a reset that has since happened.
+    private static func isOutOfDate(_ service: ServiceID, limits: [ServiceLimit], readAt: Date, now: Date) -> Bool {
+        if now.timeIntervalSince(readAt) > service.staleAfter { return true }
+        return limits.contains { limit in !limit.isBudget && (limit.resetsAt.map { $0 <= now } ?? false) }
+    }
+
+    private func claudeToolTip() -> String {
+        guard case .signedIn(let source, let profile) = state else { return ServiceID.claude.displayName }
+        let who = Self.subtitle(for: source, profile: profile)
+        return who.isEmpty ? ServiceID.claude.displayName : ServiceID.claude.displayName + "\n" + who
     }
 
     static func subtitle(for source: IdentitySource, profile: Profile?) -> String {
@@ -553,108 +384,183 @@ class MenuViewController: NSViewController {
         }
     }
 
-    private func showEmpty(title: String, subtitle: String, buttons: [NSButton], refreshEnabled: Bool, authTitle: String?) {
-        // A fetch cut short by an expiry or a sign-out never reports back.
-        isFetching = false
-        renderStatus()
-        usageStack.isHidden = true
-        emptyStateView.isHidden = false
-        setSubtitle("")
-        refreshButton.isEnabled = refreshEnabled
-        emptyTitleLabel.stringValue = title
-        emptySubtitleLabel.stringValue = subtitle
-        buttonStack.arrangedSubviews.forEach {
-            buttonStack.removeArrangedSubview($0)
-            $0.removeFromSuperview()
+    /// Where Claude's sign-in stands, and the buttons that move it on. Nil while signed in.
+    private func signInPrompt() -> SignInPrompt? {
+        switch state {
+        case .signedIn:
+            return nil
+        case .unknown:
+            return SignInPrompt(title: "Checking sign-in...", subtitle: "One moment", buttons: [])
+        case .unreachable:
+            return SignInPrompt(title: "Could not reach claude.ai", subtitle: "Check your connection and refresh", buttons: [])
+        case .signedOut(let claudeCodeAvailable):
+            var buttons: [SignInButton] = [.browser]
+            if claudeCodeAvailable { buttons.append(.claudeCode) }
+            buttons.append(.insideApp)
+            return SignInPrompt(title: "Not signed in", subtitle: signInMessage ?? "Your browser does the signing in", buttons: buttons)
+        case .signingIn:
+            return SignInPrompt(title: "Waiting for your browser...", subtitle: "Approve the sign-in in the tab that opened", buttons: [.cancel])
+        case .sessionExpired(let source):
+            let buttons: [SignInButton]
+            switch source {
+            case .ownToken: buttons = [.browser]
+            case .claudeCode: buttons = [.claudeCode, .browser]
+            case .webSession: buttons = [.insideApp, .browser]
+            }
+            return SignInPrompt(title: "Session expired", subtitle: "Sign in again to keep tracking usage", buttons: buttons)
+        case .noChatOrg:
+            return SignInPrompt(title: "No Claude plan on this account", subtitle: "This account only has API access", buttons: [.browser])
         }
-        for button in [browserButton, claudeCodeButton, insideAppButton, cancelButton] {
-            button.isHidden = !buttons.contains(button)
+    }
+
+    private func makeSignInButton(_ kind: SignInButton) -> NSButton {
+        let button = kind == .insideApp ? LinkButton() : NSButton()
+        button.title = kind.title
+        button.target = self
+        button.action = action(for: kind)
+        switch kind {
+        case .insideApp:
+            button.isBordered = false
+            button.font = .systemFont(ofSize: 10)
+            button.contentTintColor = .secondaryLabelColor
+        case .browser, .claudeCode, .cancel:
+            button.bezelStyle = .rounded
+            button.controlSize = .small
+            if kind == .browser { button.keyEquivalent = "\r" }
         }
-        buttons.forEach { buttonStack.addArrangedSubview($0) }
-        setFooter(authTitle: authTitle)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
     }
 
-    private func setSubtitle(_ text: String) {
-        subtitleLabel.stringValue = text
-        subtitleLabel.isHidden = text.isEmpty
+    private func action(for kind: SignInButton) -> Selector {
+        switch kind {
+        case .browser: return #selector(browserTapped)
+        case .claudeCode: return #selector(claudeCodeTapped)
+        case .insideApp: return #selector(insideAppTapped)
+        case .cancel: return #selector(cancelTapped)
+        }
     }
 
-    private func setFooter(authTitle: String?) {
-        authButton.isHidden = authTitle == nil
-        authButton.title = authTitle ?? ""
-        authButton.contentTintColor = .secondaryLabelColor
-        authButton.font = .systemFont(ofSize: 11, weight: .regular)
-    }
+    // MARK: - More menu
 
-    func showLoading() {
-        isFetching = true
-        renderStatus()
-    }
-
-    func showError(_ message: String) {
-        isFetching = false
-        failure = message
-        renderStatus()
-        resizeToFit()
-    }
-
-    // MARK: - Settings menu
-
-    func makeSettingsMenu() -> NSMenu {
+    func makeMoreMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
+        let shown = shownServices()
 
-        let heading = NSMenuItem(title: "Show in Menu Bar", action: nil, keyEquivalent: "")
-        heading.isEnabled = false
-        menu.addItem(heading)
-        let current = currentLayout()
-        for layout in MenuBarLayout.allCases {
-            let item = NSMenuItem(title: layout.menuTitle, action: #selector(layoutChosen(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = layout.rawValue
-            item.state = layout == current ? .on : .off
-            menu.addItem(item)
+        menu.addItem(item("Refresh", #selector(refreshChosen)))
+
+        menu.addItem(.separator())
+        menu.addItem(heading("Menu Bar Shows"))
+        // A pinned service that is hidden leaves the menu bar on the lowest limit, so the check follows it.
+        var choice = currentMenuBarChoice()
+        if case .service(let pinned) = choice, !shown.contains(pinned) { choice = .lowest }
+        menu.addItem(item("Lowest Remaining", #selector(menuBarChosen(_:)), checked: choice == .lowest, value: Self.lowestValue))
+        for service in shown {
+            menu.addItem(item(service.displayName, #selector(menuBarChosen(_:)), checked: choice == .service(service), value: service.rawValue))
         }
 
         menu.addItem(.separator())
-        let openAtLogin = NSMenuItem(title: "Open at Login", action: #selector(openAtLoginChosen(_:)), keyEquivalent: "")
-        openAtLogin.target = self
-        openAtLogin.state = isOpenAtLoginEnabled() ? .on : .off
-        menu.addItem(openAtLogin)
+        menu.addItem(heading("Show"))
+        for service in setUpServices() {
+            let isShown = shown.contains(service)
+            // The last shown service stays: an empty panel is a dead end.
+            let isLast = isShown && shown.count == 1
+            menu.addItem(item(service.displayName, #selector(serviceToggled(_:)), checked: isShown, enabled: !isLast, value: service.rawValue))
+        }
+
+        menu.addItem(.separator())
+        menu.addItem(item("Open at Login", #selector(openAtLoginChosen), checked: isOpenAtLoginEnabled()))
+        switch state {
+        case .signedIn, .sessionExpired, .noChatOrg:
+            menu.addItem(item("Sign Out of Claude", #selector(signOutChosen)))
+        case .unknown, .unreachable, .signedOut, .signingIn:
+            break
+        }
+        let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+        quit.target = NSApp
+        menu.addItem(quit)
         return menu
+    }
+
+    private static let lowestValue = "lowest"
+
+    private func heading(_ title: String) -> NSMenuItem {
+        let heading = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        heading.isEnabled = false
+        return heading
+    }
+
+    private func item(_ title: String, _ action: Selector, checked: Bool = false, enabled: Bool = true, value: String? = nil) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.state = checked ? .on : .off
+        item.isEnabled = enabled
+        item.representedObject = value
+        return item
     }
 
     // MARK: - Actions
 
-    @objc private func refreshTapped() {
-        onRefresh?()
-    }
-
-    @objc private func settingsTapped(_ sender: NSButton) {
-        // Drop the menu just below the gear.
+    @objc private func moreTapped(_ sender: NSButton) {
+        // The menu drops just below the dots, its right edge in line with theirs, so it stays under the popover.
+        let menu = makeMoreMenu()
+        let x = sender.bounds.maxX - Self.dotsOverhang - menu.size.width
         let y = sender.isFlipped ? sender.bounds.maxY + 4 : -4
-        makeSettingsMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: y), in: sender)
+        menu.popUp(positioning: nil, at: NSPoint(x: x, y: y), in: sender)
     }
 
-    @objc private func layoutChosen(_ item: NSMenuItem) {
-        guard let raw = item.representedObject as? String, let layout = MenuBarLayout(rawValue: raw) else { return }
-        onChangeLayout?(layout)
+    @objc private func refreshChosen() { onRefresh?() }
+
+    @objc private func menuBarChosen(_ item: NSMenuItem) {
+        guard let value = item.representedObject as? String else { return }
+        if value == Self.lowestValue {
+            onChooseMenuBar?(.lowest)
+        } else if let service = ServiceID(rawValue: value) {
+            onChooseMenuBar?(.service(service))
+        }
     }
 
-    @objc private func openAtLoginChosen(_ item: NSMenuItem) {
-        onToggleOpenAtLogin?()
+    @objc private func serviceToggled(_ item: NSMenuItem) {
+        guard let value = item.representedObject as? String, let service = ServiceID(rawValue: value) else { return }
+        let shown = shownServices()
+        if shown == [service] { return }   // the last shown service stays
+        onToggleService?(service)
     }
 
-    @objc private func authTapped() {
-        onSignOut?()
-    }
+    @objc private func openAtLoginChosen() { onToggleOpenAtLogin?() }
+    @objc private func signOutChosen() { onSignOut?() }
 
     @objc private func browserTapped() { onSignInBrowser?() }
     @objc private func claudeCodeTapped() { onUseClaudeCode?() }
     @objc private func insideAppTapped() { onSignInInsideApp?() }
     @objc private func cancelTapped() { onCancelSignIn?() }
 
-    @objc private func quitTapped() {
-        NSApp.terminate(nil)
+    // MARK: - Read-only state (for tests and diagnostics)
+
+    private var sectionViews: [ServiceSectionView] { sectionsStack.arrangedSubviews.compactMap { $0 as? ServiceSectionView } }
+    func sectionView(for service: ServiceID) -> ServiceSectionView? { sectionViews.first { $0.service == service } }
+
+    var headerTitle: String { titleLabel.stringValue }
+    var sectionServices: [ServiceID] { sectionViews.map(\.service) }
+    func rows(for service: ServiceID) -> [[String]] { sectionView(for: service)?.rowTexts ?? [] }
+    func rowToolTips(for service: ServiceID) -> [String?] { sectionView(for: service)?.rowToolTips ?? [] }
+    func rowVoiceOverTexts(for service: ServiceID) -> [String?] { sectionView(for: service)?.rowVoiceOverTexts ?? [] }
+    func rowPercentColors(for service: ServiceID) -> [NSColor] { sectionView(for: service)?.rowPercentColors ?? [] }
+    func note(for service: ServiceID) -> String? { sectionView(for: service)?.noteText }
+    func iconToolTip(for service: ServiceID) -> String? { sectionView(for: service)?.iconToolTip }
+    func iconImage(for service: ServiceID) -> NSImage? { sectionView(for: service)?.icon }
+    func isDimmed(_ service: ServiceID) -> Bool { sectionView(for: service)?.isDimmed ?? false }
+    func iconFrame(for service: ServiceID) -> NSRect? { sectionView(for: service)?.iconFrame(in: view) }
+    func rowEdges(for service: ServiceID) -> [PanelRowEdges] { sectionView(for: service)?.rowEdges(in: view) ?? [] }
+    var visibleSignInButtons: [String] { sectionView(for: .claude)?.signInButtonTitles ?? [] }
+    var emptyTitle: String { sectionView(for: .claude)?.promptTitle ?? "" }
+    var emptySubtitle: String { sectionView(for: .claude)?.promptSubtitle ?? "" }
+    var statusText: String { statusLabel.stringValue }
+    var isShowingSpinner: Bool { !spinner.isHidden }
+    var footerFrames: (status: NSRect, version: NSRect) {
+        func rect(_ field: NSTextField) -> NSRect { view.convert(field.alignmentRect(forFrame: field.frame), from: field.superview) }
+        return (rect(statusLabel), rect(versionLabel))
     }
+    var moreButtonFrame: NSRect { view.convert(moreButton.frame, from: moreButton.superview) }
 }
