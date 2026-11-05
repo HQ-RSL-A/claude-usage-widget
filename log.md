@@ -2,6 +2,19 @@
 
 Newest entry on top.
 
+## 2026-11-04 17:05 PT
+
+v0.6.0 is released: https://github.com/HQ-RSL-A/claude-usage-widget/releases/tag/v0.6.0. Rahul picked "1": merge and release.
+- **Git:** merge `941ef2f` on `main` (its tree is identical to the tested branch's), annotated tag `v0.6.0`.
+- **CI:** both runs green on GitHub's macOS 15 / Xcode 16 runner. The Tests run passed, which is the first time this suite has run on Xcode 16. The DMG build passed.
+- **DMG:** 882,067 bytes. Downloaded and checked: 0.6.0 (9), `AppIcon.icns`, `Assets.car`, `THIRD-PARTY-NOTICES.md` inside, ad-hoc linker signature.
+
+Then, per the rule in `CLAUDE.md`, the v0.5.0 release, its DMG and its tag were deleted. v0.5.0 pointed at `6f8a8b657350`. v0.5.1 was never released on its own; its fixes ship in v0.6.0. GitHub has one branch (`main`), one tag and one release.
+
+All 13 merged work branches are deleted locally, and none were ever pushed. Their worktrees went earlier. HQ-188 and HQ-189 are closed.
+
+Rahul's Mac runs the local Release build of the final commit (`c79a02e`). The later commits are docs only, so the released code is the same.
+
 ## 2026-11-04 16:50 PT
 
 v0.6.0 is final on `feat/usage-panel` (head after this entry), and it's installed in `/Applications`. It is not merged to `main`, not pushed and not tagged, which is Rahul's call. The whole branch had a final review in three parallel areas (data and security, menu bar and battery, panel and docs) plus the Task 9 gate.
