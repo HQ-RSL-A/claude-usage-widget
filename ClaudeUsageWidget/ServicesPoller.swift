@@ -22,8 +22,11 @@ final class ServicesPoller {
     private let interval: TimeInterval
     /// The poll's timer while it runs; nil when stopped.
     private(set) var timer: Timer?
-    /// The refresh in progress. A call that arrives meanwhile joins it.
-    private var refreshTask: Task<Void, Never>?
+    /// The latest pass over the readers: reading now, or waiting for the one before it to end.
+    private var latestPass: Task<Void, Never>?
+    /// Whether `latestPass` has begun reading. One that has not begun will still see whatever a call that arrives now
+    /// knows about (a service shown or hidden), so that call joins it instead of adding another.
+    private var latestPassHasStarted = false
 
     init(readers: [ServiceReader], interval: TimeInterval = 300) {
         self.readers = readers
@@ -66,20 +69,28 @@ final class ServicesPoller {
 
     // MARK: - Reading
 
-    /// Reads every set-up service once, one after another, then calls `onChange` if any state changed.
-    /// A call that arrives while a refresh is running waits for it instead of reading again, so no reader is read twice
-    /// at once and the caller finds fresh states either way.
+    /// Reads every set-up service once, one after another, then calls `onChange` if any state changed. The caller
+    /// returns when a pass that started after its call has finished, so it finds the states as they are now.
+    ///
+    /// A call that arrives while a pass is running does not read beside it, and it does not simply join it either: the
+    /// pass underway may already have read or skipped the service the call is about (one just shown or hidden). The
+    /// call waits for the pass underway, and one more pass runs right after it. Calls that arrive before that pass starts
+    /// share it, so any number of calls during one pass cost one more pass, and passes never overlap, so no reader is
+    /// read twice at once.
     func refresh() async {
-        if let running = refreshTask {
-            await running.value
+        if let waiting = latestPass, !latestPassHasStarted {
+            await waiting.value
             return
         }
-        let task = Task { [self] in
+        let before = latestPass
+        latestPassHasStarted = false
+        let pass = Task { [self] in
+            await before?.value
+            latestPassHasStarted = true
             await readAll()
-            refreshTask = nil
         }
-        refreshTask = task
-        await task.value
+        latestPass = pass
+        await pass.value
     }
 
     private func readAll() async {

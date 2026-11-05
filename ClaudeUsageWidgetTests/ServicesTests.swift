@@ -299,9 +299,43 @@ final class ServicesTests: XCTestCase {
         XCTAssertFalse(oneReset.isCurrent(.claude, now: now))
     }
 
+    /// A reset that came before the reading was taken is already in its numbers, so it says nothing against them.
+    /// Only a reading taken before the reset can be out of date because of it.
+    func testReadingTakenAfterAResetStaysCurrent() {
+        // Taken a minute ago, the reset an hour ago: the numbers already count the new window.
+        XCTAssertTrue(reading(minutesAgo: 1, resets: now.addingTimeInterval(-3600)).isCurrent(.claude, now: now))
+        // Grok Bot's day-long clock the same way: read an hour ago, reset three hours ago.
+        XCTAssertTrue(reading(minutesAgo: 60, resets: now.addingTimeInterval(-3 * 3600)).isCurrent(.grokBot, now: now))
+        // A reset at the very moment of the reading is in the reading, not after it.
+        XCTAssertTrue(reading(minutesAgo: 1, resets: now.addingTimeInterval(-60)).isCurrent(.claude, now: now))
+        // One second later it is after the reading, and the reading is old.
+        XCTAssertFalse(reading(minutesAgo: 1, resets: now.addingTimeInterval(-59)).isCurrent(.claude, now: now))
+        // The reading's age still counts: a reset before it does not make an old reading current.
+        XCTAssertFalse(reading(minutesAgo: 16, resets: now.addingTimeInterval(-3600)).isCurrent(.claude, now: now))
+    }
+
+    /// With several limits, the reading is old as soon as one of them reset after it was taken.
+    func testOnlyALimitThatResetAfterTheReadingMakesItOld() {
+        let readAt = now.addingTimeInterval(-60)
+        func state(session: TimeInterval, weekly: TimeInterval) -> ServiceState {
+            .reading(limits: [
+                ServiceLimit(label: "5hr Session", percentUsed: 0.3, resetsAt: now.addingTimeInterval(session)),
+                ServiceLimit(label: "Weekly", percentUsed: 0.8, resetsAt: now.addingTimeInterval(weekly)),
+            ], readAt: readAt)
+        }
+        XCTAssertTrue(state(session: -3600, weekly: -7200).isCurrent(.claude, now: now), "both reset before the reading")
+        XCTAssertTrue(state(session: -3600, weekly: 3600).isCurrent(.claude, now: now), "one reset before it, one still ahead")
+        XCTAssertFalse(state(session: -3600, weekly: -30).isCurrent(.claude, now: now), "the second reset after the reading, and has happened")
+        XCTAssertFalse(state(session: -30, weekly: 3600).isCurrent(.claude, now: now), "the first one, with the second still ahead")
+    }
+
     /// A budget (Claude's extra usage) is spending, not a rate limit, so it never makes a reading old.
     func testBudgetNeverMakesAReadingOld() {
-        XCTAssertTrue(reading(minutesAgo: 1, resets: now.addingTimeInterval(-3600), isBudget: true).isCurrent(.claude, now: now))
+        // A reset after the reading and already past: on a rate limit that makes the reading old, so the budget
+        // is what keeps this one current. (A reset from before the reading would prove nothing.)
+        let resets = now.addingTimeInterval(-30)
+        XCTAssertFalse(reading(minutesAgo: 1, resets: resets).isCurrent(.claude, now: now), "the same reset on a rate limit")
+        XCTAssertTrue(reading(minutesAgo: 1, resets: resets, isBudget: true).isCurrent(.claude, now: now))
     }
 
     /// There are no numbers in the other states, so none of them is current.

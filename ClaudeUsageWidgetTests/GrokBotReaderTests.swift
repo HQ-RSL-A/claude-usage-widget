@@ -313,7 +313,7 @@ final class GrokBotReaderTests: XCTestCase {
 
         let state = await reader.read()
 
-        XCTAssertEqual(state, .unavailable(reason: "No usage limit on this plan"))
+        XCTAssertEqual(state, .unavailable(reason: "No included usage on this plan"))
     }
 
     // MARK: - Set up

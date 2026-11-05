@@ -86,12 +86,16 @@ extension ServiceState {
 extension ServiceState {
     /// Whether the numbers may be shown as current. The menu bar and the panel both ask this, so they always agree.
     /// A reading is current until it is older than its service keeps it current, and it stops being current once a
-    /// limit that can run out has reset: the reading may be from before the reset. A budget (Claude's extra
+    /// limit that can run out has reset since the reading was taken: its numbers are from before the reset. A reset
+    /// from before the reading is already in the numbers, so it says nothing against them. A budget (Claude's extra
     /// usage) is spending, not a rate limit, so it never counts. The other states have no numbers to be current.
     func isCurrent(_ service: ServiceID, now: Date) -> Bool {
         guard case .reading(let limits, let readAt) = self else { return false }
         if now.timeIntervalSince(readAt) > service.staleAfter { return false }
-        return !limits.contains { limit in !limit.isBudget && (limit.resetsAt.map { $0 <= now } ?? false) }
+        return !limits.contains { limit in
+            guard !limit.isBudget, let resetsAt = limit.resetsAt else { return false }
+            return resetsAt > readAt && resetsAt <= now
+        }
     }
 
     /// What every service that is set up on this Mac has to show: Claude's from its own sign-in, the others from

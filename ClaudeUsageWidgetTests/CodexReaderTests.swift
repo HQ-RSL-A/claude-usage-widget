@@ -131,7 +131,7 @@ final class CodexReaderTests: XCTestCase {
         let codex = CodexReader(authFile: authFile)
 
         XCTAssertTrue(codex.session === HTTP.session)
-        XCTAssertEqual(codex.session.configuration.urlCache?.diskCapacity ?? 0, 0, "No disk cache, so no Cache.db")
+        XCTAssertNil(codex.session.configuration.urlCache, "No cache at all, so no Cache.db")
         // The poller reads one service after another, so a request that never ends would hold up the rest.
         XCTAssertEqual(codex.session.configuration.timeoutIntervalForResource, 30)
     }
@@ -326,7 +326,11 @@ final class CodexReaderTests: XCTestCase {
         XCTAssertTrue(StubURLProtocol.requests.isEmpty)
     }
 
-    func testAuthFileThatCannotBeReadSaysSignIn() async throws {
+    /// Codex rewrites auth.json whenever it renews its token, so a read can catch it half written, and a later Codex can
+    /// save it in another shape. Either way the file is there: the sign-in is not gone, this read just cannot use it.
+    /// "Couldn't reach Codex" is what lets the poller keep the last numbers until a later read gets the file whole;
+    /// a sign-in hint would replace them. Only a missing file is a sign-out.
+    func testAuthFileThatCannotBeReadSaysCouldntReach() async throws {
         stubUsage()
         // Empty, cut short, not JSON, the wrong shape, and a token of the wrong type.
         let auths = ["", #"{"tokens":{"access_to"#, "not json", "[]", #"{"tokens":"at"}"#, #"{"tokens":{"access_token":5}}"#]
@@ -335,8 +339,34 @@ final class CodexReaderTests: XCTestCase {
 
             let state = await reader.read()
 
-            XCTAssertEqual(state, Self.signInHint, "for \(auth)")
+            XCTAssertEqual(state, Self.unreachable, "for \(auth)")
         }
+        XCTAssertTrue(StubURLProtocol.requests.isEmpty)
+    }
+
+    /// The same for a file that is there and cannot be opened at all.
+    func testAuthFileThatCannotBeOpenedSaysCouldntReach() async throws {
+        try XCTSkipIf(getuid() == 0, "root opens a file whatever its permissions")
+        stubUsage()
+        try writeAuth(Self.authJSON)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: authFile.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authFile.path) }
+        XCTAssertTrue(reader.isSetUp(), "the setup: the file is there")
+
+        let state = await reader.read()
+
+        XCTAssertEqual(state, Self.unreachable)
+        XCTAssertTrue(StubURLProtocol.requests.isEmpty)
+    }
+
+    /// A folder with the file's name is not Codex's sign-in (`isSetUp` says so too): no file, so no sign-in.
+    func testFolderWithTheAuthFilesNameIsNoSignIn() async throws {
+        stubUsage()
+        try FileManager.default.createDirectory(at: authFile, withIntermediateDirectories: true)
+
+        let state = await reader.read()
+
+        XCTAssertEqual(state, Self.signInHint)
         XCTAssertTrue(StubURLProtocol.requests.isEmpty)
     }
 
