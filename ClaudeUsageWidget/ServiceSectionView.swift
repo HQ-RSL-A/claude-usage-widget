@@ -27,10 +27,11 @@ enum PanelMetrics {
 
 // MARK: - PanelColors
 
-/// The colors of what's left in a row. The menu bar's amber (#F59E0B) and red (#EF4444) are right on a dark panel but
-/// only about 2:1 against a light one, too faint for a number (Rahul's rule: colored digits must not get lost). So the
-/// light panel gets a darker pair, picked while drawing, from the appearance the number is drawn in. The menu bar keeps
-/// its own colors (`StatusIcon.color`).
+/// The colors of what's left in a row. Amber (#F59E0B) and red (#EF4444) are right on a dark panel but too faint for a
+/// number on a light one (amber is only about 2:1; Rahul's rule: colored digits must not get lost). So the light panel
+/// gets a darker pair, #B45309 and #DC2626, picked while drawing, from the appearance the number is drawn in. The menu
+/// bar badge picks the same way for its amber (`StatusIcon.color`): #F59E0B on a dark menu bar, #B45309 on a light
+/// one. Its red is #EF4444 on both.
 enum PanelColors {
     /// Under 60% used the number is plain text; from 60% it is amber and from 85% red.
     static func percent(for state: RingColorState) -> NSColor {
