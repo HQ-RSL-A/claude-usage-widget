@@ -151,9 +151,10 @@ class MenuViewController: NSViewController {
         sectionsStack.spacing = Self.spacing
         sectionsStack.translatesAutoresizingMaskIntoConstraints = false
 
-        // Footer: Claude's status line on the left, the version on the right
+        // Footer: Claude's status line on the left, the version on the right. The status line says whether the numbers
+        // can be trusted, so it is secondary (tertiary text measured 1.9:1 against a light panel); the version is only a label.
         statusLabel.font = .systemFont(ofSize: 10)
-        statusLabel.textColor = .tertiaryLabelColor
+        statusLabel.textColor = .secondaryLabelColor
         statusLabel.maximumNumberOfLines = 2
         statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -242,8 +243,13 @@ class MenuViewController: NSViewController {
 
     func render(state: AuthState) {
         self.state = state
-        // A fetch cut short by an expiry or a sign-out never reports back.
-        if case .signedIn = state {} else { isFetching = false }
+        if case .signedIn = state {} else {
+            // A fetch cut short by an expiry or a sign-out never reports back. Neither do the numbers it fetched or
+            // the failure it hit outlive the sign-in: the next one, maybe another account, starts from nothing.
+            isFetching = false
+            lastData = nil
+            failure = nil
+        }
         reload()
     }
 
@@ -269,11 +275,28 @@ class MenuViewController: NSViewController {
         let text = makeText()
         let sections = makeSections(text: text)
         if sections != renderedSections {
+            draw(sections)
             renderedSections = sections
-            rebuildSections(sections)
         }
         renderFooter(text: text)
         resizeToFit()
+    }
+
+    /// Draws `sections`. The same services in the same order is the usual case (a minute passes and one section's
+    /// words move), and then only the sections that changed are replaced: the others keep their views, so VoiceOver's
+    /// place and a click in progress are not lost to a redraw that changed nothing there. Anything else starts over.
+    private func draw(_ sections: [PanelSection]) {
+        guard let drawn = renderedSections, drawn.map(\.service) == sections.map(\.service) else {
+            rebuildSections(sections)
+            return
+        }
+        for (old, new) in zip(drawn, sections) where old != new {
+            // The panel must always say what `sections` says: a section that cannot be found to replace starts over.
+            guard replaceSectionView(for: new) else {
+                rebuildSections(sections)
+                return
+            }
+        }
     }
 
     private func rebuildSections(_ sections: [PanelSection]) {
@@ -283,8 +306,25 @@ class MenuViewController: NSViewController {
         }
         for (index, section) in sections.enumerated() {
             if index > 0 { addArranged(Self.separator()) }
-            addArranged(ServiceSectionView(section: section, icon: panelIcon(section.service), makeButton: makeSignInButton))
+            addArranged(makeSectionView(section))
         }
+    }
+
+    /// The new section takes the old one's place between the lines around it. False when there is no old one to replace.
+    private func replaceSectionView(for section: PanelSection) -> Bool {
+        guard let old = sectionView(for: section.service), let position = sectionsStack.arrangedSubviews.firstIndex(of: old) else {
+            return false
+        }
+        let new = makeSectionView(section)
+        sectionsStack.insertArrangedSubview(new, at: position)
+        new.widthAnchor.constraint(equalTo: sectionsStack.widthAnchor).isActive = true
+        sectionsStack.removeArrangedSubview(old)
+        old.removeFromSuperview()
+        return true
+    }
+
+    private func makeSectionView(_ section: PanelSection) -> ServiceSectionView {
+        ServiceSectionView(section: section, icon: panelIcon(section.service), makeButton: makeSignInButton)
     }
 
     private func addArranged(_ view: NSView) {
@@ -387,7 +427,7 @@ class MenuViewController: NSViewController {
         case .unknown:
             return SignInPrompt(title: "Checking sign-in...", subtitle: "One moment", buttons: [])
         case .unreachable:
-            return SignInPrompt(title: "Could not reach claude.ai", subtitle: "Check your connection and refresh", buttons: [])
+            return SignInPrompt(title: "Could not reach claude.ai", subtitle: "Check your connection. It tries again every minute.", buttons: [])
         case .signedOut(let claudeCodeAvailable):
             var buttons: [SignInButton] = [.browser]
             if claudeCodeAvailable { buttons.append(.claudeCode) }
@@ -546,13 +586,16 @@ class MenuViewController: NSViewController {
     func noteColor(for service: ServiceID) -> NSColor? { sectionView(for: service)?.noteColor }
     func iconToolTip(for service: ServiceID) -> String? { sectionView(for: service)?.iconToolTip }
     func iconImage(for service: ServiceID) -> NSImage? { sectionView(for: service)?.icon }
-    func isDimmed(_ service: ServiceID) -> Bool { sectionView(for: service)?.isDimmed ?? false }
+    func rowAlphas(for service: ServiceID) -> [CGFloat] { sectionView(for: service)?.rowAlphas ?? [] }
     func iconFrame(for service: ServiceID) -> NSRect? { sectionView(for: service)?.iconFrame(in: view) }
     func rowEdges(for service: ServiceID) -> [PanelRowEdges] { sectionView(for: service)?.rowEdges(in: view) ?? [] }
-    var visibleSignInButtons: [String] { sectionView(for: .claude)?.signInButtonTitles ?? [] }
+    func signInButtons(for service: ServiceID) -> [String] { sectionView(for: service)?.signInButtonTitles ?? [] }
+    var visibleSignInButtons: [String] { signInButtons(for: .claude) }
     var emptyTitle: String { sectionView(for: .claude)?.promptTitle ?? "" }
     var emptySubtitle: String { sectionView(for: .claude)?.promptSubtitle ?? "" }
     var statusText: String { statusLabel.stringValue }
+    var statusTextColor: NSColor { statusLabel.textColor ?? .labelColor }
+    var versionTextColor: NSColor { versionLabel.textColor ?? .labelColor }
     var isShowingSpinner: Bool { !spinner.isHidden }
     var footerFrames: (status: NSRect, version: NSRect) {
         func rect(_ field: NSTextField) -> NSRect { view.convert(field.alignmentRect(forFrame: field.frame), from: field.superview) }

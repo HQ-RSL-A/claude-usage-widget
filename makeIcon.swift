@@ -1,7 +1,10 @@
 #!/usr/bin/env swift
 // Run: swift makeIcon.swift [outputDir]
-// Draws the app icon and writes every macOS size into AppIcon.appiconset
+// Draws the app icon and writes every macOS size into ClaudeUsageWidget/Assets.xcassets/AppIcon.appiconset
 // (or into outputDir, which is how to try a change without touching the asset catalog).
+//
+// Run it from any folder. Without an outputDir it finds the asset catalog from where this script sits, so keep the
+// script in the project folder, beside ClaudeUsageWidget/. If the catalog is not there it stops and says so.
 //
 // The icon is a "reserve tank": a glass orb with RSL/A-blue liquid about two
 // thirds full, on an ink squircle that sits on the macOS icon grid (an 824 pt
@@ -235,7 +238,23 @@ func savePNG(_ image: CGImage, to path: String) {
 
 // MARK: - Generate
 
-let outDir = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "ClaudeUsageWidget/Assets.xcassets/AppIcon.appiconset"
+/// Where the PNGs go: the folder given, or else the project's own asset catalog, found from this script's location
+/// (the folder it is run from does not matter).
+func outputFolder() -> String {
+    if CommandLine.arguments.count > 1 { return CommandLine.arguments[1] }
+    let projectFolder = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    let catalog = projectFolder.appendingPathComponent("ClaudeUsageWidget/Assets.xcassets")
+    var isFolder: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: catalog.path, isDirectory: &isFolder), isFolder.boolValue else {
+        print("✗ No asset catalog at \(catalog.path)")
+        print("  makeIcon.swift finds ClaudeUsageWidget/Assets.xcassets from where the script sits, so keep it in the project folder.")
+        print("  To write the PNGs somewhere else: swift makeIcon.swift <outputDir>")
+        exit(1)
+    }
+    return catalog.appendingPathComponent("AppIcon.appiconset").path
+}
+
+let outDir = outputFolder()
 try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
 
 let sizes: [(name: String, points: Int, scale: Int)] = [

@@ -75,3 +75,6 @@ jobs:
 
             ### Requirements
             macOS 13 (Ventura) or later
+
+            ### Third-party notices
+            The Claude and Codex logos come from Lobe Icons (MIT License). The license text and the trademark notes are in [THIRD-PARTY-NOTICES.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/THIRD-PARTY-NOTICES.md), and in the app itself.

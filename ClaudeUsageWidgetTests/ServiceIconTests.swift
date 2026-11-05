@@ -28,7 +28,7 @@ final class ServiceIconTests: XCTestCase {
     /// points where it has ink and where it is cut out (Grok Bot's eyes, Codex's prompt). A path the renderer
     /// misreads changes these: CoreSVG drew the original Codex logo at 49% instead of 70% because of its arcs.
     private let looks: [ServiceID: (coverage: Double, ink: [(Double, Double)], cutouts: [(Double, Double)])] = [
-        .claude: (0.40, ink: [(12, 12), (7, 3.4)], cutouts: [(3, 3), (21, 21)]),
+        .claude: (0.40, ink: [(12, 12), (7.9, 3.4)], cutouts: [(3, 3), (21, 21)]),
         .grokBot: (0.51, ink: [(12, 12), (12, 4)], cutouts: [(9.5, 11), (14.5, 11)]),
         .codex: (0.70, ink: [(12, 12), (12, 5)], cutouts: [(8, 12), (15.5, 15.4)]),
     ]
@@ -51,6 +51,21 @@ final class ServiceIconTests: XCTestCase {
             shapes.append(raster.alphaBytes)
         }
         XCTAssertEqual(Set(shapes).count, ServiceID.allCases.count, "each service has its own mark")
+    }
+
+    // MARK: - License notice
+
+    /// The MIT License asks that its notice travels with the artwork. The Claude and Codex marks ship inside the
+    /// app, so the notice does too, not only in the repository.
+    func testThirdPartyNoticesShipInsideTheApp() throws {
+        let url = try XCTUnwrap(Bundle.main.url(forResource: "THIRD-PARTY-NOTICES", withExtension: "md"),
+                                "THIRD-PARTY-NOTICES.md is a resource of the app")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(text.contains("MIT License"), "the license the marks come under")
+        XCTAssertTrue(text.contains("Permission is hereby granted"), "its full text, not only its name")
+        XCTAssertTrue(text.contains("Copyright (c) 2023 LobeHub"), "the copyright notice")
+        XCTAssertTrue(text.contains("not made, sponsored or endorsed by either company"), "the trademark note for Claude and Codex")
+        XCTAssertTrue(text.contains("Grok Bot and its icon belong to their owner"), "Grok Bot's mark imitates its app's icon, and says so")
     }
 
     // MARK: - Panel icon

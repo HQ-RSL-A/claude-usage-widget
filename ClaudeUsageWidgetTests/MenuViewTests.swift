@@ -267,12 +267,14 @@ final class MenuViewTests: XCTestCase {
     }
 
     func testHintShownForNotSignedInService() {
-        let vc = controller()
+        // Claude is signed out here, so there are buttons on the panel to wrongly find in the Codex section.
+        let vc = controller(state: .signedOut(claudeCodeAvailable: true))
         vc.shownServices = { [.claude, .codex] }
         vc.update(services: [.codex: .notSignedIn(hint: codexHint)])
         XCTAssertEqual(vc.rows(for: .codex), [])
         XCTAssertEqual(vc.note(for: .codex), codexHint)
-        XCTAssertEqual(vc.visibleSignInButtons, [], "Claude's buttons are Claude's alone")
+        XCTAssertEqual(vc.signInButtons(for: .codex), [], "the sign-in buttons are Claude's alone")
+        XCTAssertEqual(vc.signInButtons(for: .claude).count, 3, "they are in Claude's section")
     }
 
     func testReasonShownForUnavailableService() {
@@ -294,22 +296,25 @@ final class MenuViewTests: XCTestCase {
     // MARK: - Out-of-date numbers
 
     /// A number that is out of date must not look current: it is dimmed, beside the note that says how old it is.
+    /// This reads how opaque each row is really drawn, not the flag the dimming is decided with.
     func testOutOfDateReadingIsDimmed() throws {
         let vc = controller()
         vc.shownServices = { [.claude, .grokBot] }
         vc.update(with: try max20x())
+        XCTAssertLessThan(PanelMetrics.dimmedAlpha, 1)
 
         // Grok Bot's numbers count for a day: 40 minutes is current, 25 hours is not.
         vc.update(services: [.grokBot: grokBot(readAt: clock.addingTimeInterval(-40 * 60))])
-        XCTAssertFalse(vc.isDimmed(.grokBot))
+        XCTAssertEqual(vc.rowAlphas(for: .grokBot), [1])
         vc.update(services: [.grokBot: grokBot(readAt: clock.addingTimeInterval(-25 * 3600))])
-        XCTAssertTrue(vc.isDimmed(.grokBot))
-        XCTAssertFalse(vc.isDimmed(.claude))
+        XCTAssertEqual(vc.rowAlphas(for: .grokBot), [PanelMetrics.dimmedAlpha])
+        XCTAssertEqual(vc.rowAlphas(for: .claude), [1, 1], "Claude's numbers are current")
 
-        // Claude's count for 15 minutes.
+        // Claude's count for 15 minutes: every one of its rows goes faint together.
         clock = clock.addingTimeInterval(16 * 60)
         vc.renderTimes()
-        XCTAssertTrue(vc.isDimmed(.claude))
+        XCTAssertEqual(vc.rowAlphas(for: .claude), [PanelMetrics.dimmedAlpha, PanelMetrics.dimmedAlpha])
+        XCTAssertEqual(vc.rowAlphas(for: .grokBot), [PanelMetrics.dimmedAlpha], "still out of date")
     }
 
     /// Numbers from before a reset are out of date even when they are young.
@@ -317,8 +322,35 @@ final class MenuViewTests: XCTestCase {
         let vc = controller()
         vc.shownServices = { [.claude, .grokBot] }
         vc.update(services: [.grokBot: grokBot(readAt: clock.addingTimeInterval(-3600), resetsIn: -60)])
-        XCTAssertTrue(vc.isDimmed(.grokBot))
+        XCTAssertEqual(vc.rowAlphas(for: .grokBot), [PanelMetrics.dimmedAlpha])
         XCTAssertEqual(vc.rows(for: .grokBot), [["Weekly", "93%", ""]], "a reset that has passed is not shown as coming")
+    }
+
+    /// A dimmed row is faint to the eye, so it must also say so to VoiceOver: a number that cannot be trusted is
+    /// not read out as if it could.
+    func testOutOfDateRowsSayOutOfDateToVoiceOver() throws {
+        let vc = controller()
+        vc.shownServices = { [.claude, .grokBot] }
+        vc.update(with: try max20x())
+        func spoken(_ service: ServiceID) -> [String] {
+            vc.rowVoiceOverTexts(for: service).map { ($0 ?? "").replacingOccurrences(of: "\u{202F}", with: " ") }
+        }
+
+        vc.update(services: [.grokBot: grokBot(readAt: clock.addingTimeInterval(-40 * 60))])
+        let current = spoken(.grokBot)
+        XCTAssertEqual(current, ["Weekly, 93% left, Resets Sun Oct 18, 9:00 PM"], "a current row says nothing about its age")
+
+        vc.update(services: [.grokBot: grokBot(readAt: clock.addingTimeInterval(-25 * 3600))])
+        XCTAssertEqual(spoken(.grokBot), ["Weekly, 93% left, Resets Sun Oct 18, 9:00 PM, out of date"])
+        XCTAssertEqual(spoken(.claude), ["5hr Session, 92% left, Resets Mon Oct 12, 10:00 PM", "Weekly, 27% left, Resets Fri Oct 16, 4:00 PM"],
+                       "Claude's rows are current")
+
+        // Every dimmed row says it, also one with no reset ahead to read out.
+        vc.update(services: [.grokBot: grokBot(readAt: clock.addingTimeInterval(-3600), resetsIn: -60)])
+        XCTAssertEqual(spoken(.grokBot), ["Weekly, 93% left, out of date"])
+        clock = clock.addingTimeInterval(16 * 60)
+        vc.renderTimes()
+        XCTAssertEqual(spoken(.claude).map { $0.hasSuffix(", out of date") }, [true, true])
     }
 
     // MARK: - Claude's sign-in, inside its section
@@ -370,7 +402,7 @@ final class MenuViewTests: XCTestCase {
         XCTAssertEqual(vc.visibleSignInButtons, [])
         vc.render(state: .unreachable)
         XCTAssertEqual(vc.emptyTitle, "Could not reach claude.ai")
-        XCTAssertEqual(vc.emptySubtitle, "Check your connection and refresh")
+        XCTAssertEqual(vc.emptySubtitle, "Check your connection. It tries again every minute.")
         XCTAssertEqual(vc.visibleSignInButtons, [])
     }
 
@@ -401,6 +433,57 @@ final class MenuViewTests: XCTestCase {
         XCTAssertEqual(vc.statusText, "")
     }
 
+    /// The numbers belong to the session that fetched them. After a sign-out a different account can sign in, and its
+    /// panel must start from nothing, not show the last account's numbers until its own arrive.
+    func testASignInAfterASignOutNeverShowsThePreviousSessionsNumbers() throws {
+        let vc = controller()
+        vc.update(with: try max20x())
+        XCTAssertEqual(vc.rows(for: .claude).count, 2)
+
+        vc.render(state: .signedOut(claudeCodeAvailable: false))
+        let other = Profile(email: "other@example.com", displayName: "Other", organizationName: nil, organizationType: nil)
+        vc.render(state: .signedIn(.ownToken, other))
+        XCTAssertEqual(vc.rows(for: .claude), [], "the old account's numbers are gone")
+        XCTAssertEqual(vc.note(for: .claude), "Loading...")
+        XCTAssertEqual(vc.statusText, "", "no numbers, so no age either")
+
+        // Its own numbers, once they arrive, are shown.
+        var data = try proLike()
+        data.lastUpdated = clock
+        vc.update(with: data)
+        XCTAssertEqual(vc.rows(for: .claude).count, 5)
+    }
+
+    /// A failure belongs to the session too: the next one does not start with the last one's error.
+    func testASignInAfterASignOutNeverShowsThePreviousSessionsFailure() throws {
+        let vc = controller()
+        vc.showLoading()
+        vc.showError("Offline or claude.ai unreachable")
+        XCTAssertEqual(vc.note(for: .claude), "Couldn't load usage")
+
+        vc.render(state: .sessionExpired(.ownToken))
+        vc.render(state: .signedIn(.ownToken, nil))
+        XCTAssertEqual(vc.note(for: .claude), "Loading...", "not the last session's \"Couldn't load usage\"")
+        XCTAssertEqual(vc.statusText, "", "not the last session's \"Couldn't refresh\"")
+
+        // The same holds with numbers on screen: the failure shown beside them is the last session's too.
+        vc.update(with: try max20x())
+        vc.showError("Offline or claude.ai unreachable")
+        vc.render(state: .signedOut(claudeCodeAvailable: false))
+        vc.render(state: .signedIn(.ownToken, nil))
+        XCTAssertEqual(vc.rows(for: .claude), [])
+        XCTAssertEqual(vc.statusText, "")
+    }
+
+    /// The same sign-in announced again (its profile arrived, say) is not a new session: the numbers stay.
+    func testTheSameSignInAnnouncedAgainKeepsTheNumbers() throws {
+        let vc = controller(state: .signedIn(.ownToken, nil))
+        vc.update(with: try max20x())
+        vc.render(state: .signedIn(.ownToken, Profile(email: "test@example.com", displayName: "Test", organizationName: nil, organizationType: nil)))
+        XCTAssertEqual(vc.rows(for: .claude).count, 2)
+        XCTAssertEqual(vc.statusText, "Updated just now")
+    }
+
     func testIconTooltipNamesTheServiceAndWhoIsSignedIn() {
         let vc = controller(state: .signedIn(.ownToken, Profile(email: "test@example.com", displayName: "Test", organizationName: nil, organizationType: nil)))
         vc.shownServices = { [.claude, .grokBot] }
@@ -423,6 +506,14 @@ final class MenuViewTests: XCTestCase {
         vc.update(with: try max20x())
         XCTAssertEqual(vc.statusText, "Updated just now")
         XCTAssertFalse(vc.isShowingSpinner)
+    }
+
+    /// The status line says whether the numbers can be trusted ("Couldn't refresh", "Updated 40 min ago"), so it is the
+    /// secondary label color; tertiary text measured 1.9:1 against a light panel. The version is only a label.
+    func testFooterStatusIsSecondaryAndTheVersionTertiary() {
+        let vc = controller()
+        XCTAssertEqual(vc.statusTextColor, .secondaryLabelColor)
+        XCTAssertEqual(vc.versionTextColor, .tertiaryLabelColor)
     }
 
     func testStatus_whileLoading_saysUpdating_andSpins() {
@@ -715,6 +806,72 @@ final class MenuViewTests: XCTestCase {
         XCTAssertTrue(vc.sectionView(for: .claude) === section, "same words, same views")
         vc.render(state: .signingIn)
         XCTAssertFalse(vc.sectionView(for: .claude) === section, "new words, new views")
+    }
+
+    /// A minute passes and one section's words move ("Updated 40 min ago" to "41 min ago"). Only that section is drawn
+    /// again: the others keep their views, so VoiceOver's place and a click in progress are not lost to a redraw that
+    /// changed nothing there.
+    func testOnlyTheSectionsThatChangedAreReplaced() {
+        let vc = controller(state: .signedOut(claudeCodeAvailable: true))
+        vc.shownServices = { [.claude, .grokBot] }
+        vc.update(services: [.grokBot: grokBot(readAt: clock.addingTimeInterval(-40 * 60))])
+        let claude = vc.sectionView(for: .claude)
+        let oldGrokBot = vc.sectionView(for: .grokBot)
+        XCTAssertNotNil(claude)
+        XCTAssertEqual(vc.note(for: .grokBot), "Updated 40 min ago")
+
+        clock = clock.addingTimeInterval(60)
+        vc.renderTimes()
+        XCTAssertEqual(vc.note(for: .grokBot), "Updated 41 min ago", "the section that changed is current")
+        XCTAssertTrue(vc.sectionView(for: .claude) === claude, "Claude's words did not change, so its views stay")
+        XCTAssertFalse(vc.sectionView(for: .grokBot) === oldGrokBot, "Grok Bot's note changed, so its section is drawn again")
+        XCTAssertEqual(vc.sectionServices, [.claude, .grokBot])
+    }
+
+    /// A section in the middle is replaced in its own place: the ones around it stay, and the order and the lines
+    /// between them are as before.
+    func testReplacingASectionInTheMiddleKeepsTheOthersInPlace() throws {
+        let vc = controller()
+        vc.shownServices = { [.claude, .grokBot, .codex] }
+        vc.update(with: try max20x())
+        vc.update(services: [.grokBot: grokBot(used: 0.07), .codex: .notSignedIn(hint: codexHint)])
+        vc.view.layoutSubtreeIfNeeded()
+        let (claude, codex) = (vc.sectionView(for: .claude), vc.sectionView(for: .codex))
+        let oldGrokBot = vc.sectionView(for: .grokBot)
+        let height = vc.preferredContentSize.height
+
+        vc.update(services: [.grokBot: grokBot(used: 0.40), .codex: .notSignedIn(hint: codexHint)])
+        vc.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(vc.rows(for: .grokBot), [["Weekly", "60%", "Oct 18"]])
+        XCTAssertFalse(vc.sectionView(for: .grokBot) === oldGrokBot)
+        XCTAssertTrue(vc.sectionView(for: .claude) === claude)
+        XCTAssertTrue(vc.sectionView(for: .codex) === codex)
+        XCTAssertEqual(vc.sectionServices, [.claude, .grokBot, .codex], "the new section sits between the two that stayed")
+        XCTAssertEqual(vc.preferredContentSize.height, height, accuracy: 0.01, "same lines between the same sections")
+
+        // It still lines up with the others.
+        let edges = [ServiceID.claude, .grokBot].flatMap { vc.rowEdges(for: $0) }
+        for edge in edges {
+            XCTAssertEqual(edge.labelMinX, edges[0].labelMinX, accuracy: 0.01)
+            XCTAssertEqual(edge.resetMaxX, edges[0].resetMaxX, accuracy: 0.01)
+        }
+        XCTAssertEqual(vc.iconFrame(for: .grokBot)?.minX ?? -1, 14, accuracy: 0.01)
+    }
+
+    /// When the services shown change, nothing from before is kept: the order is new, so every section is drawn again.
+    func testANewOrderOfServicesDrawsEverySectionAgain() throws {
+        let vc = controller()
+        vc.shownServices = { [.claude, .grokBot] }
+        vc.update(with: try max20x())
+        vc.update(services: [.grokBot: grokBot()])
+        let (oldClaude, oldGrokBot) = (vc.sectionView(for: .claude), vc.sectionView(for: .grokBot))
+
+        vc.shownServices = { [.grokBot, .claude] }
+        vc.update(services: [.grokBot: grokBot()])
+        XCTAssertEqual(vc.sectionServices, [.grokBot, .claude])
+        XCTAssertFalse(vc.sectionView(for: .claude) === oldClaude)
+        XCTAssertFalse(vc.sectionView(for: .grokBot) === oldGrokBot)
+        XCTAssertEqual(vc.rows(for: .claude).count, 2)
     }
 
     /// A long failure message wraps inside the footer instead of pushing the version out of the popover.

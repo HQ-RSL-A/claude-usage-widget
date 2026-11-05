@@ -22,6 +22,10 @@ targets:
       - path: ClaudeUsageWidget
         excludes:
           - "**/*Tests*"
+      # The Lobe Icons license asks that its notice travels with the artwork, so the app carries it
+      # (Contents/Resources/THIRD-PARTY-NOTICES.md), not only the repository.
+      - path: THIRD-PARTY-NOTICES.md
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.rsla.ClaudeUsageWidget
