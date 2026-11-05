@@ -25,7 +25,8 @@ struct StatusPresentation: Equatable {
 
     /// The item shows the limit closest to running out across the shown services, or the pinned service's own
     /// lowest one. A reading that is not current never takes the place of one that is, so an old number is never
-    /// passed off as new; alone, it shows dimmed.
+    /// passed off as new; alone, it shows dimmed. The one thing that takes the place of an old number is a shown
+    /// Claude that is signed out (see below).
     static func make(services: [ServiceID: ServiceState], visible: [ServiceID], choice: MenuBarChoice, text: UsageText) -> StatusPresentation {
         // In the panel's order, whatever order the caller lists them in. A service with no state has nothing to show.
         let shown: [(id: ServiceID, state: ServiceState)] = ServiceID.allCases.compactMap { id in
@@ -34,6 +35,13 @@ struct StatusPresentation: Equatable {
         }
         let everyLimit = shown.flatMap { candidates(of: $0.id, in: $0.state, now: text.now) }
         let toolTip = shown.flatMap { toolTipLines(for: $0.id, state: $0.state, text: text) }.joined(separator: "\n")
+
+        // A sign-out has to be seen ("it always stays signed in" is why the bar is trusted). With no current number
+        // anywhere, a shown Claude that is signed out says "Sign in", not an old number from another service,
+        // whatever is pinned. A current number of any shown service still wins: it is true.
+        if isSignedOut(.claude, in: shown), everyLimit.allSatisfy(\.isStale) {
+            return noNumbers(for: .claude, shown: shown, toolTip: toolTip, text: text)
+        }
 
         let pinned: ServiceID? = {
             guard case .service(let id) = choice, shown.contains(where: { $0.id == id }) else { return nil }
@@ -76,6 +84,12 @@ struct StatusPresentation: Equatable {
         return rateLimits.isEmpty ? nil : (rateLimits, readAt)
     }
 
+    /// Whether this service is among the shown ones and is not signed in.
+    private static func isSignedOut(_ service: ServiceID, in shown: [(id: ServiceID, state: ServiceState)]) -> Bool {
+        guard case .notSignedIn? = shown.first(where: { $0.id == service })?.state else { return false }
+        return true
+    }
+
     private static func candidates(of service: ServiceID, in state: ServiceState, now: Date) -> [Candidate] {
         guard let reading = rateReading(state) else { return [] }
         // Old by the service's own clock, or from before a reset: either way the number may no longer be true.
@@ -96,16 +110,22 @@ struct StatusPresentation: Equatable {
     // MARK: - No numbers
 
     /// No service has a number to show. The item stands for one service and says what is wrong with it. "Sign in" is
-    /// a call to action, so it is drawn at full strength (dimmed it was 2.6:1 on a light menu bar); "Updating",
-    /// "Offline" and "No data" say there is nothing to act on, and stay dimmed like an old number.
+    /// a call to action, so it is drawn at full strength (dimmed it was 2.6:1 on a light menu bar), and it is only
+    /// Claude's: the panel has Claude's sign-in buttons. Grok Bot and Codex are signed in from their own apps, which
+    /// nothing here can do anything about, so theirs says "No data". "Updating", "Offline" and "No data" say there is
+    /// nothing to act on, and stay dimmed like an old number.
     private static func noNumbers(for service: ServiceID, shown: [(id: ServiceID, state: ServiceState)], toolTip: String, text: UsageText) -> StatusPresentation {
         let state = shown.first { $0.id == service }?.state ?? .loading
         let title: String
         var isDimmed = true
         switch state {
         case .notSignedIn:
-            title = "Sign in"
-            isDimmed = false
+            if service == .claude {
+                title = "Sign in"
+                isDimmed = false
+            } else {
+                title = "No data"
+            }
         case .loading: title = "Updating"
         case .unavailable: title = "Offline"
         case .reading: title = "No data"   // a reading with no limit in it

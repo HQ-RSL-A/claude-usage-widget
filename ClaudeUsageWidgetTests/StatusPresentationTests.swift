@@ -207,17 +207,30 @@ final class StatusPresentationTests: XCTestCase {
         }
     }
 
-    /// Every way of being signed out says the same thing in the same strength, whatever the hint inside the panel says.
-    func testSignInIsNeverDimmedForAnyHintOrService() {
+    /// Every way Claude can be signed out says the same thing in the same strength, whatever the hint inside the panel
+    /// says: the panel has the buttons that fix it.
+    func testClaudeSignInIsNeverDimmedForAnyHint() {
         for hint in ["Not signed in", "Session expired", "No Claude plan on this account"] {
             XCTAssertEqual(make([.claude: .notSignedIn(hint: hint)]).content,
                            StatusItemContent(logo: .claude, title: "Sign in", badge: .normal, isDimmed: false), hint)
         }
-        XCTAssertEqual(make([.grokBot: .notSignedIn(hint: "Open Grok Bot and sign in")]).content,
-                       StatusItemContent(logo: .grokBot, title: "Sign in", badge: .normal, isDimmed: false))
         // Stale numbers are not a call to action: they stay dimmed.
         XCTAssertTrue(make([.grokBot: grokBot(weekly: 0.90, minutesAgo: 25 * 60)]).content.isDimmed)
         XCTAssertTrue(make([.claude: .reading(limits: [], readAt: now)]).content.isDimmed, "a reading with nothing in it is not either")
+    }
+
+    /// Grok Bot's and Codex's "not signed in" is something to do in their own app. Nothing in this app fixes it, so the
+    /// bar says "No data", dimmed like the other states with nothing to act on, and never "Sign in".
+    func testOtherServicesNotSignedInSaysNoDataDimmed() {
+        let hints: [(ServiceID, String)] = [
+            (.grokBot, "Open Grok Bot to load its usage"),
+            (.codex, "Open Codex and sign in with ChatGPT"),
+        ]
+        for (service, hint) in hints {
+            let presentation = make([service: .notSignedIn(hint: hint)])
+            XCTAssertEqual(presentation.content, StatusItemContent(logo: service, title: "No data", badge: .normal, isDimmed: true), "\(service)")
+            XCTAssertEqual(presentation.accessibilityValue, "\(service.displayName), \(text.lowercasedFirst(hint))", "\(service)")
+        }
     }
 
     func testNoNumbersAnywhereShowsThePinnedOrFirstShownService() {
@@ -246,6 +259,69 @@ final class StatusPresentationTests: XCTestCase {
         XCTAssertEqual(make([:], visible: []).content, StatusItemContent(logo: .claude, title: "Updating", badge: .normal, isDimmed: true))
         // A shown service the app has no state for is left out, not guessed at.
         XCTAssertEqual(make([.claude: claude()], visible: [.claude, .codex]).content.logo, .claude)
+    }
+
+    // MARK: - A signed-out Claude
+
+    /// A sign-out has to be seen. With no current number anywhere, the bar says "Sign in" with Claude's logo, in
+    /// place of an old number from another service (dimmed, it would look like nothing is wrong).
+    func testSignedOutClaudeShowsSignInInPlaceOfAnOldNumber() {
+        let oldReadings: [(ServiceID, ServiceState)] = [
+            (.grokBot, grokBot(weekly: 0.90, minutesAgo: 25 * 60)),   // a day old: not current for Grok Bot
+            (.codex, oneLimit(0.90, minutesAgo: 16)),                // three missed polls and a bit: not current for Codex
+        ]
+        for (service, old) in oldReadings {
+            // On its own the old reading still shows, dimmed: that is what Claude's sign-out replaces.
+            XCTAssertTrue(make([service: old]).content.isDimmed, "\(service)")
+            for hint in ["Not signed in", "Session expired", "No Claude plan on this account"] {
+                let presentation = make([.claude: .notSignedIn(hint: hint), service: old])
+                XCTAssertEqual(presentation.content, StatusItemContent(logo: .claude, title: "Sign in", badge: .normal, isDimmed: false), "\(service), \(hint)")
+                XCTAssertEqual(presentation.accessibilityValue, "Claude, \(text.lowercasedFirst(hint))", "\(service), \(hint)")
+            }
+        }
+        // The tooltip still tells about both services.
+        let tooltip = make([.claude: .notSignedIn(hint: "Session expired"), .grokBot: grokBot(weekly: 0.90, minutesAgo: 25 * 60)]).toolTip
+        XCTAssertEqual(plain(tooltip).components(separatedBy: "\n"), [
+            "Claude: Session expired",
+            "Grok Bot Weekly: 10% left, resets Tue 1:21 PM",
+            "Grok Bot updated 1 day ago",
+        ])
+    }
+
+    /// Another service's number that is current is true, and it is what the bar is for: it still wins.
+    func testCurrentNumberOfAnotherServiceBeatsASignedOutClaude() {
+        let signedOut = ServiceState.notSignedIn(hint: "Not signed in")
+        XCTAssertEqual(make([.claude: signedOut, .grokBot: grokBot(weekly: 0.60)]).content,
+                       StatusItemContent(logo: .grokBot, title: "40% remain", badge: .amber, isDimmed: false))
+        XCTAssertEqual(make([.claude: signedOut, .codex: oneLimit(0.60)]).content,
+                       StatusItemContent(logo: .codex, title: "40% remain", badge: .amber, isDimmed: false))
+        // One old and one current: the current one, whichever is lower.
+        let old = grokBot(weekly: 0.90, minutesAgo: 25 * 60)
+        XCTAssertEqual(make([.claude: signedOut, .grokBot: old, .codex: oneLimit(0.30)]).content,
+                       StatusItemContent(logo: .codex, title: "70% remain", badge: .normal, isDimmed: false))
+    }
+
+    /// Only a sign-out takes the place of an old number. Claude loading or unreachable says nothing is wrong with
+    /// the sign-in, so the old number keeps showing, dimmed. A Claude the person hid is not the bar's business.
+    func testOnlyAShownSignOutReplacesAnOldNumber() {
+        let old = grokBot(weekly: 0.90, minutesAgo: 25 * 60)
+        let dimmedGrokBot = StatusItemContent(logo: .grokBot, title: "10% remain", badge: .critical, isDimmed: true)
+        for state in [ServiceState.loading, .unavailable(reason: "Can't reach claude.ai")] {
+            XCTAssertEqual(make([.claude: state, .grokBot: old]).content, dimmedGrokBot, "\(state)")
+        }
+        XCTAssertEqual(make([.claude: .notSignedIn(hint: "Not signed in"), .grokBot: old], visible: [.grokBot]).content, dimmedGrokBot)
+    }
+
+    /// A pin does not hide a sign-out when the pinned number is old, and a current pinned number still shows. Pinned
+    /// to the signed-out Claude itself, the bar falls back to the lowest number there is.
+    func testSignedOutClaudeAndAPinnedService() {
+        let signedOut = ServiceState.notSignedIn(hint: "Not signed in")
+        XCTAssertEqual(make([.claude: signedOut, .grokBot: grokBot(weekly: 0.90, minutesAgo: 25 * 60)], choice: .service(.grokBot)).content,
+                       StatusItemContent(logo: .claude, title: "Sign in", badge: .normal, isDimmed: false))
+        XCTAssertEqual(make([.claude: signedOut, .grokBot: grokBot(weekly: 0.60)], choice: .service(.grokBot)).content,
+                       StatusItemContent(logo: .grokBot, title: "40% remain", badge: .amber, isDimmed: false))
+        XCTAssertEqual(make([.claude: signedOut, .grokBot: grokBot(weekly: 0.60)], choice: .service(.claude)).content,
+                       StatusItemContent(logo: .grokBot, title: "40% remain", badge: .amber, isDimmed: false))
     }
 
     // MARK: - Tooltip
@@ -310,7 +386,7 @@ final class StatusPresentationTests: XCTestCase {
         }
     }
 
-    // MARK: - Claude alone, as the app wires it until the panel work lands
+    // MARK: - Claude's sign-in state, as the app feeds it
 
     func testClaudeAloneFromItsSignInState() throws {
         // The Max 20x fixture is dated 12 October 2026, so this test keeps that day's clock.
@@ -332,5 +408,52 @@ final class StatusPresentationTests: XCTestCase {
                        StatusItemContent(logo: .claude, title: "Sign in", badge: .normal, isDimmed: false))
         XCTAssertEqual(presentation(.unreachable).content,
                        StatusItemContent(logo: .claude, title: "Offline", badge: .normal, isDimmed: true))
+    }
+
+    // MARK: - What the app reads, and in what order (RefreshPolicy)
+
+    /// Settings in a suite of their own, with these services hidden.
+    private func settings(hidden: [ServiceID] = []) -> ServiceSettings {
+        let suite = "io.rsla.ClaudeUsageWidget.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let settings = ServiceSettings(defaults: defaults)
+        hidden.forEach { settings.setHidden(true, for: $0) }
+        return settings
+    }
+
+    private let signedIn = AuthState.signedIn(.ownToken, nil)
+
+    /// A hidden service is not read, and Claude is no different: it is read while it is signed in and shown, and not otherwise.
+    func testClaudeIsReadOnlyWhileSignedInAndShown() {
+        let setUp: [ServiceID] = [.claude, .grokBot, .codex]
+        XCTAssertTrue(RefreshPolicy.readsClaude(settings: settings(), setUp: setUp, state: signedIn))
+        XCTAssertFalse(RefreshPolicy.readsClaude(settings: settings(hidden: [.claude]), setUp: setUp, state: signedIn), "hidden")
+        XCTAssertTrue(RefreshPolicy.readsClaude(settings: settings(hidden: [.grokBot, .codex]), setUp: setUp, state: signedIn),
+                      "hiding the others changes nothing for Claude")
+        // Not signed in there is nothing to read, shown or not.
+        let notSignedIn: [AuthState] = [.unknown, .unreachable, .signedOut(claudeCodeAvailable: true), .signingIn,
+                                        .sessionExpired(.ownToken), .noChatOrg]
+        for state in notSignedIn {
+            XCTAssertFalse(RefreshPolicy.readsClaude(settings: settings(), setUp: setUp, state: state), "\(state)")
+        }
+    }
+
+    /// The panel never shows fewer than one service, so a Claude that is hidden but all there is stays on show, and it is
+    /// read: otherwise its section would say "Loading..." for good, and nothing in the menu could show it again.
+    func testHiddenClaudeThatIsAllThereIsIsStillRead() {
+        XCTAssertTrue(RefreshPolicy.readsClaude(settings: settings(hidden: [.claude]), setUp: [.claude], state: signedIn))
+        XCTAssertTrue(RefreshPolicy.readsClaude(settings: settings(hidden: [.claude, .grokBot]), setUp: [.claude, .grokBot], state: signedIn),
+                      "everything is hidden, so the first service stays")
+        XCTAssertFalse(RefreshPolicy.readsClaude(settings: settings(hidden: [.claude]), setUp: [.claude, .grokBot], state: signedIn),
+                       "with another service shown, a hidden Claude is hidden")
+    }
+
+    /// After a sleep, what is on screen was judged against the clock before it. It is judged again first, so an old
+    /// number dims at once, instead of passing for current until the read lands (or for good, if the network is not back).
+    func testWakeShowsTheNumbersAgainBeforeReadingThem() {
+        var steps: [String] = []
+        RefreshPolicy.afterWake(render: { steps.append("render") }, refresh: { steps.append("refresh") })
+        XCTAssertEqual(steps, ["render", "refresh"])
     }
 }

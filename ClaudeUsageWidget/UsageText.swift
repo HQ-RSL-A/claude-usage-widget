@@ -1,6 +1,8 @@
 import Foundation
 
-/// Usage in plain words, for the popover rows, the status line, the menu bar title and the menu bar tooltip and VoiceOver.
+/// The app's plain words for times: when a limit resets, how old a reading is, the panel's status line and the menu bar
+/// title. StatusPresentation builds the menu bar's tooltip and VoiceOver text out of the same pieces, and the panel's
+/// reset times are in `UsageText+Panel.swift`.
 /// The clock, calendar and locale come in from outside, so every string can be tested exactly.
 struct UsageText {
     var now: Date
@@ -13,15 +15,10 @@ struct UsageText {
         self.locale = locale
     }
 
-    // MARK: - Rows
+    // MARK: - Reset
 
     /// "Resets in 3 hr 10 min" when the reset is under a day away, "Resets Thu 4:00 PM" further out,
-    /// nil when there is no reset ahead.
-    func reset(_ bucket: UsageBucket) -> String? {
-        reset(bucket.resetsAt)
-    }
-
-    /// The same words for a reset time that does not come from a bucket (Grok Bot, Codex, the menu bar).
+    /// nil when there is no reset ahead (or no reset time at all).
     func reset(_ date: Date?) -> String? {
         guard let date, date > now else { return nil }
         let seconds = date.timeIntervalSince(now)
@@ -31,17 +28,6 @@ struct UsageText {
         if hours == 0 { return "Resets in \(rest) min" }
         if rest == 0 { return "Resets in \(hours) hr" }
         return "Resets in \(hours) hr \(rest) min"
-    }
-
-    /// The line under a row's bar.
-    func detail(_ bucket: UsageBucket) -> String {
-        let reset = reset(bucket)
-        guard bucket.isAtLimit else { return reset ?? "" }
-        return reset.map { "Limit reached, " + lowercasedFirst($0) } ?? "Limit reached"
-    }
-
-    func percentLeft(_ bucket: UsageBucket) -> String {
-        "\(bucket.percentLeft)% left"
     }
 
     // MARK: - Status line

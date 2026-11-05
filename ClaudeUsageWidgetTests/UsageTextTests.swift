@@ -12,66 +12,33 @@ final class UsageTextTests: XCTestCase {
         return UsageText(now: now, calendar: calendar, locale: Locale(identifier: "en_US_POSIX"))
     }
 
-    private func bucket(_ kind: BucketKind = .session, _ used: Double = 0.5, resetsIn seconds: TimeInterval?) -> UsageBucket {
-        UsageBucket(kind: kind, percentUsed: used, resetsAt: seconds.map { now.addingTimeInterval($0) }, lockedReason: nil)
-    }
-
     private func date(_ iso: String) -> Date { ISO8601DateFormatter().date(from: iso)! }
 
     // MARK: - Reset
 
     func test_reset_underAnHour_showsMinutes() {
-        XCTAssertEqual(text.reset(bucket(resetsIn: 42 * 60)), "Resets in 42 min")
+        XCTAssertEqual(text.reset(now.addingTimeInterval(42 * 60)), "Resets in 42 min")
     }
 
     func test_reset_roundsToTheNearestMinute_neverZero() {
-        XCTAssertEqual(text.reset(bucket(resetsIn: 20)), "Resets in 1 min")
-        XCTAssertEqual(text.reset(bucket(resetsIn: 3 * 3600 + 9 * 60 + 30)), "Resets in 3 hr 10 min")
-        XCTAssertEqual(text.reset(bucket(resetsIn: 3600 + 20)), "Resets in 1 hr")
+        XCTAssertEqual(text.reset(now.addingTimeInterval(20)), "Resets in 1 min")
+        XCTAssertEqual(text.reset(now.addingTimeInterval(3 * 3600 + 9 * 60 + 30)), "Resets in 3 hr 10 min")
+        XCTAssertEqual(text.reset(now.addingTimeInterval(3600 + 20)), "Resets in 1 hr")
     }
 
-    func test_reset_underADay_countsDown_forWeeklyToo() {
-        let weekly = UsageBucket(kind: .weeklyAll, percentUsed: 0.74, resetsAt: date("2026-10-27T03:00:00Z"), lockedReason: nil)
-        XCTAssertEqual(text.reset(weekly), "Resets in 3 hr 49 min")
+    func test_reset_underADay_countsDown() {
+        XCTAssertEqual(text.reset(date("2026-10-27T03:00:00Z")), "Resets in 3 hr 49 min")
     }
 
     func test_reset_aDayOrMore_showsDayAndTime() {
-        let weekly = UsageBucket(kind: .weeklyAll, percentUsed: 0.2, resetsAt: date("2026-10-29T16:00:00Z"), lockedReason: nil)
         // The system formatter puts a narrow no-break space (U+202F) before "PM"; either space reads the same.
-        XCTAssertEqual(text.reset(weekly)?.replacingOccurrences(of: "\u{202F}", with: " "), "Resets Thu 4:00 PM")
+        XCTAssertEqual(text.reset(date("2026-10-29T16:00:00Z"))?.replacingOccurrences(of: "\u{202F}", with: " "), "Resets Thu 4:00 PM")
     }
 
     func test_reset_pastOrMissing_isNil() {
-        XCTAssertNil(text.reset(bucket(resetsIn: -60)))
-        XCTAssertNil(text.reset(bucket(resetsIn: nil)))
-    }
-
-    /// The panel and the menu bar have a date, not a bucket: same words either way.
-    func test_reset_fromADate_usesTheSameWordsAsFromABucket() {
-        XCTAssertEqual(text.reset(now.addingTimeInterval(42 * 60)), "Resets in 42 min")
-        XCTAssertEqual(text.reset(now.addingTimeInterval(3 * 3600 + 9 * 60 + 30)), "Resets in 3 hr 10 min")
-        XCTAssertEqual(text.reset(date("2026-10-29T16:00:00Z"))?.replacingOccurrences(of: "\u{202F}", with: " "), "Resets Thu 4:00 PM")
-        let weekly = bucket(.weeklyAll, 0.2, resetsIn: 3 * 24 * 3600)
-        XCTAssertEqual(text.reset(weekly), text.reset(weekly.resetsAt))
-    }
-
-    func test_reset_fromADate_pastOrMissing_isNil() {
         XCTAssertNil(text.reset(now.addingTimeInterval(-60)))
         XCTAssertNil(text.reset(now), "a reset at this very moment is not ahead")
         XCTAssertNil(text.reset(nil))
-    }
-
-    // MARK: - Row text
-
-    func test_detail_limitReached() {
-        XCTAssertEqual(text.detail(bucket(.session, 1.0, resetsIn: 72 * 60)), "Limit reached, resets in 1 hr 12 min")
-        XCTAssertEqual(text.detail(bucket(.session, 1.0, resetsIn: nil)), "Limit reached")
-        XCTAssertEqual(text.detail(bucket(.session, 0.5, resetsIn: nil)), "")
-        XCTAssertEqual(text.detail(bucket(.session, 0.5, resetsIn: 42 * 60)), "Resets in 42 min")
-    }
-
-    func test_percentLeft() {
-        XCTAssertEqual(text.percentLeft(bucket(.session, 0.12, resetsIn: nil)), "88% left")
     }
 
     // MARK: - Age and status line

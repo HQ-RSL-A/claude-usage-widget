@@ -36,8 +36,6 @@ public enum BucketKind: String, CaseIterable {
         case .weeklySonnet: return "Weekly (Sonnet)"
         }
     }
-
-    public var isWeekly: Bool { self != .session }
 }
 
 // MARK: - UsageBucket
@@ -55,10 +53,6 @@ public struct UsageBucket: Equatable {
         self.lockedReason = lockedReason
     }
 
-    public var barColorState: RingColorState {
-        .from(percent: percentUsed)
-    }
-
     /// What's left, as a whole percent. 100 minus the rounded used percent, so it always adds up
     /// to 100 with the "% used" claude.ai shows.
     public var percentLeft: Int { Self.percentLeft(forUsed: percentUsed) }
@@ -68,8 +62,6 @@ public struct UsageBucket: Equatable {
         let share = used.isNaN ? 0 : min(max(used, 0), 1)
         return 100 - Int((share * 100).rounded())
     }
-
-    public var isAtLimit: Bool { percentLeft == 0 }
 }
 
 // MARK: - ExtraUsage
@@ -100,16 +92,6 @@ public struct UsageData {
 
     public func bucket(_ kind: BucketKind) -> UsageBucket? {
         buckets.first { $0.kind == kind }
-    }
-
-    public var sessionBucket: UsageBucket? { bucket(.session) }
-
-    /// The weekly limit closest to running out; on a tie, the first in BucketKind order.
-    public var weekBucket: UsageBucket? {
-        buckets.filter(\.kind.isWeekly).reduce(nil) { best, next in
-            guard let best else { return next }
-            return next.percentUsed > best.percentUsed ? next : best
-        }
     }
 
     /// The earliest reset still ahead of `now`.

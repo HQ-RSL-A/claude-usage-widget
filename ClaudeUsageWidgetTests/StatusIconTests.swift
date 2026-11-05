@@ -11,7 +11,8 @@ final class StatusIconTests: XCTestCase {
     /// The badge dot: 6 pt across, centered at (13, 13) of the 16 pt mark (counted from the bottom left),
     /// with a 1.5 pt ring cut clear around it.
     private let badgeCenter = CGPoint(x: 13, y: 13)
-    private let amber = (r: 245, g: 158, b: 11)   // #F59E0B
+    private let amberOnDark = (r: 245, g: 158, b: 11)   // #F59E0B
+    private let amberOnLight = (r: 180, g: 83, b: 9)     // #B45309, darker: #F59E0B is only 2:1 against a light menu bar
     private static let wallpaper = CGColor(srgbRed: 128 / 255, green: 100 / 255, blue: 60 / 255, alpha: 1)   // brown, opaque
     private static func isWallpaper(_ pixel: Bitmap.Pixel) -> Bool {
         pixel.a == 255 && abs(pixel.r - 128) <= 1 && abs(pixel.g - 100) <= 1 && abs(pixel.b - 60) <= 1
@@ -31,7 +32,6 @@ final class StatusIconTests: XCTestCase {
         XCTAssertEqual(button.alignment, .left)
         XCTAssertEqual(button.font, StatusIcon.titleFont())
         XCTAssertEqual(button.accessibilityLabel(), "Usage Remaining")
-        XCTAssertEqual(StatusIcon.accessibilityLabel, "Usage Remaining")
     }
 
     // MARK: - Template or not
@@ -66,8 +66,8 @@ final class StatusIconTests: XCTestCase {
             let onDark = Bitmap(image, in: .darkAqua)
             let onLight = Bitmap(image, in: .aqua)
 
-            assertColor(onDark.pixel(at: badgeCenter), amber, "\(service) badge on a dark menu bar")
-            assertColor(onLight.pixel(at: badgeCenter), amber, "\(service) badge on a light menu bar")
+            assertColor(onDark.pixel(at: badgeCenter), amberOnDark, "\(service) badge on a dark menu bar")
+            assertColor(onLight.pixel(at: badgeCenter), amberOnLight, "\(service) badge on a light menu bar, from the same image")
 
             var inked = 0, notWhiteOnDark = 0, notBlackOnLight = 0
             bare.forEachPixel { point, pixel in
@@ -163,15 +163,25 @@ final class StatusIconTests: XCTestCase {
         }
     }
 
-    /// The panel draws its bars with the same two colors.
-    func testBadgeColorsAreAmberAndRedAndNormalFollowsTheForeground() {
+    /// The colors in each menu bar appearance. A dot is small, so it has to stand out from the menu bar behind it:
+    /// amber #F59E0B does on a dark one but is only 2:1 against a light one, so there it is the darker #B45309. Red
+    /// holds on both, and the mark itself is white on a dark menu bar and black on a light one.
+    func testBadgeColorsPerAppearance() {
         func components(_ color: NSColor) -> [Int] {
             let c = color.usingColorSpace(.sRGB)!
             return [c.redComponent, c.greenComponent, c.blueComponent].map { Int(($0 * 255).rounded()) }
         }
-        XCTAssertEqual(components(StatusIcon.color(for: .amber, foreground: .white)), [245, 158, 11])
-        XCTAssertEqual(components(StatusIcon.color(for: .critical, foreground: .white)), [239, 68, 68])
-        XCTAssertEqual(StatusIcon.color(for: .normal, foreground: .white), .white)
+        let expected: [(NSAppearance.Name, RingColorState, [Int])] = [
+            (.darkAqua, .amber, [245, 158, 11]),
+            (.aqua, .amber, [180, 83, 9]),
+            (.darkAqua, .critical, [239, 68, 68]),
+            (.aqua, .critical, [239, 68, 68]),
+            (.darkAqua, .normal, [255, 255, 255]),
+            (.aqua, .normal, [0, 0, 0]),
+        ]
+        for (name, state, rgb) in expected {
+            XCTAssertEqual(components(StatusIcon.color(for: state, in: NSAppearance(named: name)!)), rgb, "\(state) in \(name.rawValue)")
+        }
     }
 
     // MARK: - The item
@@ -184,9 +194,6 @@ final class StatusIconTests: XCTestCase {
         let length = StatusIcon.itemLength()
         XCTAssertGreaterThanOrEqual(length, needed)
         XCTAssertLessThan(length, needed + 1, "no more room than a rounding up")
-        // The width does not depend on what is shown.
-        for badge in [RingColorState.normal, .amber, .critical] { _ = StatusIcon.image(for: content(badge: badge, title: "5% remain")) }
-        XCTAssertEqual(StatusIcon.itemLength(), length)
     }
 
     func testTitleFontIsTheMenuBarFontWithEvenDigits() {
@@ -311,5 +318,4 @@ private struct Bitmap {
 
 private extension CGPoint {
     func distance(to other: CGPoint) -> CGFloat { ((x - other.x) * (x - other.x) + (y - other.y) * (y - other.y)).squareRoot() }
-    func moved(by direction: CGPoint, distance: CGFloat) -> CGPoint { CGPoint(x: x + direction.x * distance, y: y + direction.y * distance) }
 }
