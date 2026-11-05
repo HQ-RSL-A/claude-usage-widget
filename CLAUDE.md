@@ -32,7 +32,9 @@ Native macOS menu bar app (Swift + AppKit) showing AI plan usage at a glance: Cl
 - **Tokens live in the Keychain or memory**, never UserDefaults, logs or files. Tests touch only `io.rsla.ClaudeUsageWidget.tests*` Keychain services
 - **Menu bar item: no motion, and its width never changes with the numbers.** The title is the system's own menu bar text; only the badge dot on the logo turns amber or red (Rahul, 2026-10-26: colored digits get lost on colored wallpapers)
 - **Network requests go through `HTTP.session` (ephemeral) with `Cache-Control: no-store`; never `URLSession.shared`.** Its disk cache stores request headers, bearer tokens included, in `Cache.db`
-- **Grok Bot and Codex are read, never run, refreshed or stored.** Grok Bot: open only its account-slot and weekly-usage blobs, never `sand-secrets.json` or its Safe Storage Keychain item. Codex: read `auth.json` fresh on every poll, never refresh, write or keep its token. A hidden service is not read. Tests never read real files under `~/Library` or `~/.codex`
+- **Grok Bot and Codex are read, never run, refreshed or stored.** Grok Bot: open only its account-slot and weekly-usage blobs, never `sand-secrets.json` or its Safe Storage Keychain item. Codex: read `auth.json` fresh on every poll, never refresh, write or keep its token. Tests never read real files under `~/Library` or `~/.codex`
+- **A hidden service is not read, Claude included.** Hiding one in the "..." menu stops its reads (a hidden Codex never sends its token to ChatGPT, a hidden Claude makes no usage fetches); showing it again reads it at once. The last shown service cannot be hidden
+- **Third-party artwork ships with its notice.** `THIRD-PARTY-NOTICES.md` is a resource of the app target (`project.yml`), so it lands in `Contents/Resources`, and the release notes (`build.yml`) link it. Check the built `.app` after touching either
 - **GitHub keeps only the latest release.** When a new release is out, delete the previous release, its DMG and its tag without asking (Rahul, 2026-10-27). Commit history stays; record the old tag's commit in `log.md`
 - **Never tag a release before the built app has been driven through the changed flow.** v0.4.0 was tagged before its manual pass and shipped a broken browser sign-in; green unit tests and a consent page that loads did not catch it. `brain.md` Testing says how to drive the popover for real
 
@@ -41,7 +43,7 @@ Native macOS menu bar app (Swift + AppKit) showing AI plan usage at a glance: Cl
 ```bash
 open ClaudeUsageWidget.xcodeproj     # Open in Xcode
 xcodegen generate                     # Regenerate project from project.yml
-swift makeIcon.swift                  # Regenerate app icon PNGs
+swift makeIcon.swift                  # Regenerate app icon PNGs (run from any folder; it finds the asset catalog beside itself)
 xcodebuild -scheme ClaudeUsageWidget -configuration Release  # CLI build
 xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO  # Unit tests
 ```
@@ -54,4 +56,4 @@ xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNI
 - Downloaded DMG triggers Gatekeeper error - users must run `sudo xattr -cr /Applications/ClaudeUsageWidget.app`
 - Google sign-in fails inside the embedded login window (unsigned WKWebView). Use **Sign in with your browser**, where it works
 
-See `brain.md` for architecture details, auth flow, API shape, and ring color states.
+See `brain.md` for architecture details, auth flow, API shape, how Grok Bot and Codex are read, and the menu bar badge and panel details.

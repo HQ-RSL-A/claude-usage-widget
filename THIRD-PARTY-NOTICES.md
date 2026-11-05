@@ -39,4 +39,6 @@ SOFTWARE.
 
 The Claude mark is a trademark of Anthropic, and the Codex mark is a trademark of OpenAI. The MIT License above covers LobeHub's artwork files, not the marks they depict. The widget draws them only to show which service a number belongs to. It is not made, sponsored or endorsed by either company.
 
-Grok Bot's mark (`grokbot.svg`) is drawn by hand for this app and has no third-party source. The icons shown in the panel are the ones of the apps installed on your Mac, read at run time. None is bundled.
+Grok Bot's mark (`grokbot.svg`) is drawn by hand for this app and has no third-party source, but it imitates the icon of the Grok Bot app. Grok Bot and its icon belong to their owner. The widget is not made, sponsored or endorsed by them.
+
+The icons shown in the panel are the ones of the apps installed on your Mac, read at run time. None is bundled.

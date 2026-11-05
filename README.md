@@ -57,7 +57,7 @@ xcodebuild -scheme ClaudeUsageWidget -configuration Release
 
 ## Privacy
 
-This app talks to Anthropic: `claude.com` and `platform.claude.com` for sign-in, `api.anthropic.com` for usage, and `claude.ai` for the old in-app sign-in. When Codex is signed in on your Mac, it also sends Codex's own sign-in token to `chatgpt.com` to read your Codex usage, the way Codex itself does. It only reads that token, never renews, changes or keeps it. Grok Bot is read from a file on your Mac and nothing is sent anywhere for it. The widget's own Claude token lives in your macOS Keychain; the in-app session uses the system's WebKit cookie store. Requests leave nothing on disk. No analytics. No telemetry.
+This app talks to Anthropic: `claude.com` and `platform.claude.com` for sign-in, `api.anthropic.com` for usage, and `claude.ai` for the old in-app sign-in. When Codex is signed in on your Mac, it also sends Codex's own sign-in token to `chatgpt.com` to read your Codex usage, the way Codex itself does. It only reads that token, never renews, changes or keeps it. Grok Bot is read from a file on your Mac and nothing is sent anywhere for it. The widget's own Claude token lives in your macOS Keychain; the in-app sign-in (the old way) keeps its cookies in the system's WebKit cookie store. The app's own network requests leave nothing on disk. No analytics. No telemetry.
 
 ---
 

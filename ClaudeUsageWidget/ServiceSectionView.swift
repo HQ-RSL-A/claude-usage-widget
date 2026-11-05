@@ -126,7 +126,8 @@ final class LimitRowView: NSView {
     private let percentField = NSTextField(labelWithString: "")
     private let resetField = NSTextField(labelWithString: "")
 
-    init(row: PanelRow) {
+    /// `isOutOfDate`: the row is drawn faint, so it says so to VoiceOver too.
+    init(row: PanelRow, isOutOfDate: Bool) {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 
@@ -169,11 +170,13 @@ final class LimitRowView: NSView {
 
         // The whole row answers to the tooltip, whichever of its words the pointer is over.
         for view in [self, labelField, percentField, resetField] { view.toolTip = row.toolTip }
-        // One thing to read, not three: "5hr Session, 92% left, resets Mon Oct 12, 10:00 PM".
+        // One thing to read, not three: "5hr Session, 92% left, Resets Mon Oct 12, 10:00 PM", and ", out of date"
+        // when the number is dimmed.
         setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
         setAccessibilityChildren([])
-        setAccessibilityLabel([row.label + ", " + row.percent + " left", row.toolTip].compactMap { $0 }.joined(separator: ", "))
+        setAccessibilityLabel([row.label + ", " + row.percent + " left", row.toolTip, isOutOfDate ? "out of date" : nil]
+            .compactMap { $0 }.joined(separator: ", "))
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) not implemented") }
@@ -274,7 +277,7 @@ final class ServiceSectionView: NSView {
             rows.spacing = PanelMetrics.rowSpacing
             rows.translatesAutoresizingMaskIntoConstraints = false
             for row in section.rows {
-                let view = LimitRowView(row: row)
+                let view = LimitRowView(row: row, isOutOfDate: section.isDimmed)
                 rowViews.append(view)
                 rows.addArrangedSubview(view)
                 view.widthAnchor.constraint(equalTo: rows.widthAnchor).isActive = true
@@ -358,7 +361,19 @@ final class ServiceSectionView: NSView {
     var signInButtonTitles: [String] { buttons.map(\.title) }
     var iconToolTip: String? { iconView.toolTip }
     var icon: NSImage? { iconView.image }
-    var isDimmed: Bool { section.isDimmed }
+    /// How opaque each row is really drawn, counting every view it sits inside. The dimming is set on the stack that
+    /// holds the rows, so this reads the views, never the model's flag.
+    var rowAlphas: [CGFloat] {
+        rowViews.map { row in
+            var alpha = row.alphaValue
+            var parent = row.superview
+            while let view = parent, view !== self {
+                alpha *= view.alphaValue
+                parent = view.superview
+            }
+            return alpha
+        }
+    }
     func iconFrame(in root: NSView) -> NSRect { iconView.convert(iconView.bounds, to: root) }
     func rowEdges(in root: NSView) -> [PanelRowEdges] { rowViews.map { $0.edges(in: root) } }
 }
