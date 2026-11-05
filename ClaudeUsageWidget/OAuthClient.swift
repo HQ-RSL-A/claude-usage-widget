@@ -22,6 +22,10 @@ enum OAuthConfig {
 enum HTTP {
     static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
+        // No cache at all, beside the ephemeral session's own: nothing a request carries is stored, and no answer is
+        // taken from a cache whatever a response says about caching. Each request also says `Cache-Control: no-store`.
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         // A request's own timeout only counts quiet time. This one caps the whole request, so a service that never
         // finishes cannot hold up the services read after it.
         configuration.timeoutIntervalForResource = 30

@@ -121,14 +121,17 @@ final class OAuthClientTests: XCTestCase {
         let defaultClient = OAuthClient()
 
         XCTAssertTrue(defaultClient.session === HTTP.session)
-        XCTAssertEqual(defaultClient.session.configuration.urlCache?.diskCapacity ?? 0, 0, "No disk cache, so no Cache.db")
+        XCTAssertNil(defaultClient.session.configuration.urlCache, "No cache at all, so no Cache.db")
         XCTAssertEqual(defaultClient.session.configuration.timeoutIntervalForResource, 30)
     }
 
-    func test_sharedSession_hasNoDiskCache_andGivesUpAfterThirtySeconds() {
+    func test_sharedSession_hasNoCache_andGivesUpAfterThirtySeconds() {
         let configuration = HTTP.session.configuration
 
-        XCTAssertEqual(configuration.urlCache?.diskCapacity ?? 0, 0, "No disk cache, so no Cache.db")
+        // An ephemeral session already has a cache with no disk behind it. None at all is stronger: nothing is stored
+        // (no Cache.db) and nothing is read back, whatever a request or a response says about caching.
+        XCTAssertNil(configuration.urlCache, "No cache at all, so no Cache.db")
+        XCTAssertEqual(configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
         // The request timeout only counts quiet time. This one caps the whole request, so a service that never finishes
         // cannot hold up the services read after it.
         XCTAssertEqual(configuration.timeoutIntervalForResource, 30)

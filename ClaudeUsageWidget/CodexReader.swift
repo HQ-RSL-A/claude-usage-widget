@@ -53,10 +53,18 @@ final class CodexReader: ServiceReader {
 
     func read() async -> ServiceState {
         // Fresh every time: Codex rewrites the file when it renews its token, and the old token stops working.
-        // A file that cannot be read or understood counts as no sign-in.
-        guard let authData = try? Data(contentsOf: authFile),
-              let auth = try? JSONDecoder().decode(RawCodexAuth.self, from: authData) else {
-            return .notSignedIn(hint: Self.signInHint)
+        let authData: Data
+        do {
+            authData = try Data(contentsOf: authFile)
+        } catch {
+            // No file is a sign-out. A file that is there and cannot be opened is not one.
+            return isSetUp() ? .unavailable(reason: Self.unreachableReason) : .notSignedIn(hint: Self.signInHint)
+        }
+        // A file that is there and does not parse is Codex caught while it rewrites it, or a shape this reader does not
+        // know. The sign-in is not gone, so this is no sign-out hint: "Couldn't reach Codex" lets the poller keep the
+        // last numbers until a later read gets the file whole.
+        guard let auth = try? JSONDecoder().decode(RawCodexAuth.self, from: authData) else {
+            return .unavailable(reason: Self.unreachableReason)
         }
         // Codex signed in with an API key has no ChatGPT token, and the usage endpoint needs one.
         guard let token = auth.tokens?.access_token, !token.isEmpty else {

@@ -37,7 +37,7 @@ final class GrokBotReader: ServiceReader {
     private static let signInHint = "Open Grok Bot and sign in"
     private static let loadUsageHint = "Open Grok Bot to load its usage"
     private static let formatChangedReason = "Grok Bot changed how it saves usage"
-    private static let noLimitReason = "No usage limit on this plan"
+    private static let noIncludedUsageReason = "No included usage on this plan"
 
     private let directory: URL
 
@@ -68,7 +68,7 @@ final class GrokBotReader: ServiceReader {
         }
         guard let value = usageBlob.value, value.kind == "present" else { return .notSignedIn(hint: Self.loadUsageHint) }
         guard let usage = value.reading?.usage else { return .unavailable(reason: Self.formatChangedReason) }
-        if usage.hasNonZeroIncludedLimit == false { return .unavailable(reason: Self.noLimitReason) }
+        if usage.hasNonZeroIncludedLimit == false { return .unavailable(reason: Self.noIncludedUsageReason) }
         guard let percentUsed = usage.percentUsed, let readAtMs = value.reading?.readAtMs else {
             return .unavailable(reason: Self.formatChangedReason)
         }
