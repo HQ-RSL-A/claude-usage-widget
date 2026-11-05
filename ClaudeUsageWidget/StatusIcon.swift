@@ -13,6 +13,10 @@ enum StatusIcon {
     private static let badgeCenter = CGPoint(x: 13, y: 13)   // in the 16 pt mark, counted from the bottom left
     private static let badgeClearance: CGFloat = 1.5         // the ring cut clear around the dot
 
+    private static let amberOnDark = NSColor(srgbRed: 245 / 255, green: 158 / 255, blue: 11 / 255, alpha: 1)   // #F59E0B
+    private static let amberOnLight = NSColor(srgbRed: 180 / 255, green: 83 / 255, blue: 9 / 255, alpha: 1)    // #B45309
+    private static let red = NSColor(srgbRed: 239 / 255, green: 68 / 255, blue: 68 / 255, alpha: 1)            // #EF4444
+
     // MARK: - Button
 
     /// VoiceOver reads the item as "Usage Remaining", its value being the limit it shows. It is not named after Claude:
@@ -61,15 +65,17 @@ enum StatusIcon {
 
     /// The service's mark. With no badge it is the plain template, tinted by the system like every other menu bar
     /// icon. A colored dot cannot be tinted, so with a badge the image is not a template: its mark takes the menu
-    /// bar's color, picked while drawing. macOS draws the item once per display, each in that menu bar's
-    /// appearance, so one image is right everywhere and nothing has to watch the appearance.
+    /// bar's color and its dot the amber or red that reads against it, both picked while drawing. macOS draws the
+    /// item once per display, each in that menu bar's appearance, so one image is right everywhere and nothing has
+    /// to watch the appearance.
     static func image(for content: StatusItemContent) -> NSImage {
         let mark = ServiceIcon.menuBarMark(for: content.logo)
         guard content.badge != .normal else { return mark }
 
         let image = NSImage(size: ServiceIcon.menuBarSize, flipped: false) { bounds in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            let foreground = foregroundColor(for: NSAppearance.currentDrawing())
+            let appearance = NSAppearance.currentDrawing()
+            let foreground = color(for: .normal, in: appearance)
             let dot = CGRect(x: badgeCenter.x - badgeDiameter / 2, y: badgeCenter.y - badgeDiameter / 2, width: badgeDiameter, height: badgeDiameter)
 
             // The mark in the menu bar's color, with the ring around the dot cut out of it. Done in a layer of its
@@ -84,7 +90,7 @@ enum StatusIcon {
             context.restoreGState()
             context.endTransparencyLayer()
 
-            color(for: content.badge, foreground: foreground).setFill()
+            color(for: content.badge, in: appearance).setFill()
             NSBezierPath(ovalIn: dot).fill()
             return true
         }
@@ -92,16 +98,15 @@ enum StatusIcon {
         return image
     }
 
-    /// White on a dark menu bar, black on a light one.
-    private static func foregroundColor(for appearance: NSAppearance) -> NSColor {
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
-    }
-
-    static func color(for state: RingColorState, foreground: NSColor) -> NSColor {
+    /// What the mark and the dot are drawn in on a menu bar with this appearance, picked while drawing. The mark is
+    /// white on a dark menu bar and black on a light one. Amber is #F59E0B on a dark one, but that is only about 2:1
+    /// against a light one, too faint for a dot, so there it is the darker #B45309. Red holds on both.
+    static func color(for state: RingColorState, in appearance: NSAppearance) -> NSColor {
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         switch state {
-        case .normal: return foreground
-        case .amber: return NSColor(red: 245/255, green: 158/255, blue: 11/255, alpha: 1)
-        case .critical: return NSColor(red: 239/255, green: 68/255, blue: 68/255, alpha: 1)
+        case .normal: return isDark ? .white : .black
+        case .amber: return isDark ? amberOnDark : amberOnLight
+        case .critical: return red
         }
     }
 }

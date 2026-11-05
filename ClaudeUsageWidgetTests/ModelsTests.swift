@@ -18,14 +18,6 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(RingColorState.from(percent: 1.0), .critical)
     }
 
-    // MARK: - Bucket display
-
-    func test_barColorState_perBucket() {
-        XCTAssertEqual(bucket(.session, 0.42).barColorState, .normal)
-        XCTAssertEqual(bucket(.session, 0.67).barColorState, .amber)
-        XCTAssertEqual(bucket(.session, 0.90).barColorState, .critical)
-    }
-
     // MARK: - What's left
 
     func test_percentLeft_isHundredMinusRoundedUsed() {
@@ -45,20 +37,6 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(UsageBucket.percentLeft(forUsed: -.infinity), 100)
     }
 
-    func test_isAtLimit_whenNothingIsLeft() {
-        XCTAssertTrue(bucket(.session, 0.996).isAtLimit)
-        XCTAssertFalse(bucket(.session, 0.99).isAtLimit)
-    }
-
-    func test_weekBucket_isTheWeeklyLimitClosestToRunningOut() {
-        let mixed = UsageData(buckets: [bucket(.session, 0.9), bucket(.weeklyAll, 0.67), bucket(.weeklyOpus, 0.80), bucket(.weeklySonnet, 0.23)], extraUsage: nil)
-        XCTAssertEqual(mixed.weekBucket?.kind, .weeklyOpus)
-        XCTAssertEqual(mixed.sessionBucket?.kind, .session)
-        let tie = UsageData(buckets: [bucket(.weeklyAll, 0.5), bucket(.weeklySonnet, 0.5)], extraUsage: nil)
-        XCTAssertEqual(tie.weekBucket?.kind, .weeklyAll)
-        XCTAssertNil(UsageData(buckets: [bucket(.session, 0.5)], extraUsage: nil).weekBucket)
-    }
-
     func test_nextReset_isTheEarliestFutureReset() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let data = UsageData(buckets: [
@@ -71,13 +49,11 @@ final class ModelsTests: XCTestCase {
         XCTAssertNil(data.nextReset(after: now.addingTimeInterval(5 * 86400)))
     }
 
-    func test_bucketKind_labelsAndWeeklyFlag() {
+    func test_bucketKind_labels() {
         XCTAssertEqual(BucketKind.session.label, "5hr Session")
         XCTAssertEqual(BucketKind.weeklyAll.label, "Weekly")
         XCTAssertEqual(BucketKind.weeklyOpus.label, "Weekly (Opus)")
         XCTAssertEqual(BucketKind.weeklySonnet.label, "Weekly (Sonnet)")
-        XCTAssertFalse(BucketKind.session.isWeekly)
-        XCTAssertTrue(BucketKind.weeklyOpus.isWeekly)
     }
 
     // MARK: - Decoding real shapes
@@ -109,7 +85,7 @@ final class ModelsTests: XCTestCase {
     func test_decode_nullSession_keepsWeekly() throws {
         let data = try UsageData.decode(from: Data(Fixtures.usageNoSessionJSON.utf8))
         XCTAssertEqual(data.buckets.map(\.kind), [.weeklyAll])
-        XCTAssertNil(data.sessionBucket)
+        XCTAssertNil(data.bucket(.session))
     }
 
     func test_decode_skipsBucketWithNullUtilization() throws {

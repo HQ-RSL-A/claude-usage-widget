@@ -18,12 +18,17 @@ final class PreviewScenarioTests: XCTestCase {
         XCTAssertNil(PreviewScenario.fromLaunchArguments(defaults))
     }
 
+    /// One of Claude's limits in a scenario, the way the menu bar and the panel see it.
+    private func claudeLimit(_ scenario: PreviewScenario, _ label: String) -> ServiceLimit? {
+        scenario.data(now: now)?.serviceLimits.first { $0.label == label }
+    }
+
     func test_previewScenarios_coverTheStates() {
-        XCTAssertEqual(PreviewScenario.fresh.data(now: now)?.sessionBucket?.percentLeft, 100)
-        XCTAssertEqual(PreviewScenario.normal.data(now: now)?.weekBucket?.barColorState, .normal)
-        XCTAssertEqual(PreviewScenario.amber.data(now: now)?.weekBucket?.barColorState, .amber)
-        XCTAssertEqual(PreviewScenario.critical.data(now: now)?.weekBucket?.barColorState, .critical)
-        XCTAssertEqual(PreviewScenario.limit.data(now: now)?.sessionBucket?.percentLeft, 0)
+        XCTAssertEqual(claudeLimit(.fresh, BucketKind.session.label)?.percentLeft, 100)
+        XCTAssertEqual(claudeLimit(.normal, BucketKind.weeklyAll.label)?.colorState, .normal)
+        XCTAssertEqual(claudeLimit(.amber, BucketKind.weeklyAll.label)?.colorState, .amber)
+        XCTAssertEqual(claudeLimit(.critical, BucketKind.weeklyAll.label)?.colorState, .critical)
+        XCTAssertEqual(claudeLimit(.limit, BucketKind.session.label)?.percentLeft, 0)
         XCTAssertEqual(PreviewScenario.stale.data(now: now).map { now.timeIntervalSince($0.lastUpdated) }, 20 * 60)
         XCTAssertNil(PreviewScenario.signedOut.data(now: now))
         XCTAssertEqual(PreviewScenario.signedOut.state, .signedOut(claudeCodeAvailable: true))

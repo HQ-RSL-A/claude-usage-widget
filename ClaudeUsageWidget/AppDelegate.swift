@@ -104,7 +104,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Keeps the menu bar honest between polls: stale numbers dim and the tooltip's times move.
-    /// After a sleep the numbers are refreshed at once instead of at the next poll.
+    /// After a sleep the menu bar is judged again at once, and the numbers are refreshed instead of waiting for the
+    /// next poll (`RefreshPolicy.afterWake`).
     private func startStatusUpdates() {
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.render() }
@@ -116,11 +117,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Grok Bot and Codex are read from files on this Mac, every five minutes and on demand. A service the person
-    /// hid is not read at all: reading Codex sends its token to ChatGPT.
+    /// hid is not read at all: reading Codex sends its token to ChatGPT. Claude is held to the same rule (`syncClaudePolling`).
     private func startServicesPoller() {
         let poller = ServicesPoller(readers: [GrokBotReader(), CodexReader()])
         poller.isEnabled = { [weak self] service in !(self?.settings.isHidden(service) ?? false) }
-        poller.onChange = { [weak self] in self?.render() }
+        poller.onChange = { [weak self] in
+            self?.syncClaudePolling()   // a service that came or went can change whether Claude is the one on show
+            self?.render()
+        }
         servicesPoller = poller
         render()   // the services set up on this Mac get their sections now, loading, before the first read lands
         poller.start()
@@ -188,6 +192,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let isShown = shown.contains(service)
         if isShown && shown.count == 1 { return }
         settings.setHidden(isShown, for: service)
+        syncClaudePolling()   // hiding Claude stops its polling; showing it again starts it, reading at once
         render()
         // It was not read while it was hidden, so it is read now rather than at the next poll.
         if !isShown { refreshServices() }
@@ -205,12 +210,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             showPreview(preview)
             return
         }
+        refreshClaude()
+        refreshServices()
+    }
+
+    /// Claude's part of the refresh: its numbers, or its sign-in when it is not signed in. A Claude that is hidden is
+    /// not read at all, its sign-in included.
+    private func refreshClaude() {
+        guard shownServices().contains(.claude) else { return }
         switch authManager.state {
         case .signedIn: usageService?.fetch()
         case .signingIn: break
         default: Task { await authManager.checkAuthStatus() }
         }
-        refreshServices()
     }
 
     /// Reads Grok Bot and Codex now. Each state that changes redraws the menu bar and the panel (`onChange`).
@@ -219,14 +231,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await servicesPoller.refresh() }
     }
 
-    /// Everything that can go stale: Claude's numbers, then the other services'.
+    /// Everything that can go stale: Claude's numbers (unless it is hidden), then the other services'.
     private func refreshEverything() {
-        if case .signedIn = authState { usageService?.fetch() }
+        if readsClaude { usageService?.fetch() }
         refreshServices()
     }
 
     @objc private func systemDidWake() {
-        refreshEverything()
+        RefreshPolicy.afterWake(render: { render() }, refresh: { refreshEverything() })
     }
 
     /// Opening the panel brings the numbers up to date, unless they were read within the last minute.
@@ -247,6 +259,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Usage Service
+
+    /// Whether Claude is read now: signed in, and not hidden. A hidden service is not read, Claude included.
+    private var readsClaude: Bool {
+        RefreshPolicy.readsClaude(settings: settings, setUp: setUpServices(), state: authState)
+    }
+
+    /// Runs Claude's polling while it is read and stops it when it is not. Called when the sign-in changes, when a
+    /// service is hidden or shown and when a poll finds one come or go: hiding Claude stops it, showing it again
+    /// starts it (reading at once), and a launch with Claude hidden never starts it.
+    private func syncClaudePolling() {
+        guard let authManager else { return }   // preview mode has no sign-in and no polling
+        if readsClaude {
+            if case .signedIn(let identity, _) = authState, let source = authManager.usageSource {
+                startUsageService(source: source, identity: identity)
+            }
+        } else if usageService != nil {
+            stopUsageService()
+        }
+    }
 
     private func startUsageService(source: UsageSource, identity: IdentitySource) {
         if let service = usageService, service.identity == identity { return }
@@ -298,12 +329,7 @@ extension AppDelegate: AuthManagerDelegate {
         authState = state
         menuViewController.signInMessage = manager.signInMessage
         menuViewController.render(state: state)
-        switch state {
-        case .signedIn(let source, _):
-            if let usageSource = manager.usageSource { startUsageService(source: usageSource, identity: source) }
-        default:
-            stopUsageService()
-        }
+        syncClaudePolling()
         render()
     }
 }
@@ -333,5 +359,27 @@ extension AppDelegate: UsageServiceDelegate {
     func usageServiceDidDetectSessionExpiry(_ service: UsageService) {
         guard service === usageService else { return }
         authManager.sessionDidExpire()
+    }
+}
+
+// MARK: - RefreshPolicy
+
+/// What the app reads, and in what order, kept apart from the AppKit wiring so it can be tested.
+enum RefreshPolicy {
+
+    /// Whether Claude's usage is read: while it is signed in, and never while the person has it hidden. A hidden
+    /// service is not read: nobody asked to see it. Hidden is the panel's own answer (`shownServices`), which keeps
+    /// one service on show whatever is hidden, so a Claude that is hidden but all there is still gets its numbers.
+    static func readsClaude(settings: ServiceSettings, setUp: [ServiceID], state: AuthState) -> Bool {
+        guard case .signedIn = state else { return false }
+        return settings.shownServices(among: setUp).contains(.claude)
+    }
+
+    /// What happens when the Mac wakes. What is on screen was judged against the clock before the sleep, so it is
+    /// judged again first: an old number then dims at once, instead of passing for current until the read lands (or
+    /// for good, when the network is not back yet). Then everything is read again.
+    static func afterWake(render: () -> Void, refresh: () -> Void) {
+        render()
+        refresh()
     }
 }
