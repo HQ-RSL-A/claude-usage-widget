@@ -2,6 +2,50 @@
 
 Newest entry on top.
 
+## 2026-11-04 16:50 PT
+
+v0.6.0 is final on `feat/usage-panel` (head after this entry), and it's installed in `/Applications`. It is not merged to `main`, not pushed and not tagged, which is Rahul's call. The whole branch had a final review in three parallel areas (data and security, menu bar and battery, panel and docs) plus the Task 9 gate.
+
+**Fixed in one wave** (three fixers, one per area, each re-checked):
+- A new sign-in no longer shows the previous session's Claude numbers.
+- The panel replaces only the sections that changed, instead of rebuilding everything every minute.
+- The MIT notice ships inside the app (`Contents/Resources/THIRD-PARTY-NOTICES.md`) and the release notes link it.
+- Wake re-renders at once, so pre-sleep numbers dim before they're refreshed.
+- A hidden Claude stops its usage polling.
+- A signed-out Claude shows "Sign in" when nothing shown is current. Other services without numbers show "No data".
+- A limit whose reset passed makes a reading old only if the reading was taken before that reset.
+- `HTTP.session` has no URL cache at all.
+- A half-written Codex `auth.json` keeps the last numbers.
+- A refresh asked for mid-pass runs one more pass.
+- The amber badge is darker on a light menu bar.
+- Grok Bot's copy is "No included usage on this plan".
+- Dead code and tests that couldn't fail were removed.
+
+**Tests:** 399.
+
+**Real Mac check:**
+- No `SecurityAgent` dialog.
+- 0.0% CPU.
+- The bar shows the Claude mark and "77% remain", matching UseReserve beside it.
+- The panel shows Claude Weekly 77% (Nov 10) and Grok Bot Weekly 93% (Nov 10). No Codex section.
+- Hiding and showing Grok Bot through preferences removed its section and brought it back. With Claude hidden, nothing went to the network when the panel opened.
+
+**Not verified live:** wake from sleep, the real "..." menu toggles, a light menu bar, macOS 13, CI's Xcode 16 build, Codex against ChatGPT.
+
+**Decisions made on Rahul's behalf:** `docs/plans/2026-11-04-v0.6.0-rulings.md`.
+
+## 2026-11-04 15:30 PT
+
+v0.6.0 on branch `feat/usage-panel`, not merged, not pushed, not tagged; the Release build (CI's flags) is installed in `/Applications` on Rahul's Mac, and the v0.5.1 app it replaced is kept only in the session scratchpad. HQ-189. Rahul uses UseReserve beside the widget and wanted "a logo and 90% remain" in the menu bar, "all the other LLMs' usages with their icons" in the panel and a better app icon: Claude, Grok Bot and Codex, not Antigravity. Spec `docs/plans/2026-11-04-v0.6.0-usage-panel-design.md`, plan `docs/plans/2026-11-04-v0.6.0-implementation-plan.md`.
+
+Built: the menu bar item is the logo of the service with the lowest limit and "N% remain" in the system's own text, a fixed width, a badge dot on the logo as the only color; the panel is "Usage Remaining" with a "..." menu (Refresh, Menu Bar Shows, Show, Open at Login, Sign Out of Claude, Quit) and one section per service with the Mac app's own icon; Grok Bot is read from the files its Mac app saves and Codex from its `auth.json` and ChatGPT's usage endpoint, both by `ServicesPoller` every five minutes, on wake and when the panel opens after a minute; a hidden service is not read; new "reserve tank" app icon. This last task wired it together (`AppDelegate`), deleted `MenuBarLayout` (the old `menuBarShows` key goes at launch with `ringMetricMode`), made the menu bar and the panel share one rule for "current" (`ServiceState.isCurrent`), changed "72 hr ago" to "3 days ago", emptied the old URL cache at launch (it held bearer tokens, Claude Code's among them, from `URLSession.shared`), gave the panel a darker amber and red on a light appearance, cached the panel icons, stopped dimming "Sign in" and named the item "Usage Remaining" for VoiceOver. `THIRD-PARTY-NOTICES.md` carries Lobe Icons' MIT text for the Claude and Codex marks.
+
+Checked on the real Mac (archive with CI's flags, `AXPress` through System Events, nothing clicked by position): no `SecurityAgent` process in 25 one-second polls after each of three launches; `top` 0.0 to 0.8% CPU (the 0.8 is in the first ten seconds after launch), 0.0 after; the menu bar shows the Claude mark and "81% remain"; the popover shows Claude (Weekly 81%, Nov 10) and Grok Bot (Weekly 93%, Nov 10, "Updated 2 hr ago") and no Codex section; preview `critical`, `stale` and `signedOut` through the real wiring looked right (red and amber numbers, dimmed stale rows with "Updated 1 day ago", Claude's buttons inside its section). The old `Cache.db` went from 40 rows to 0 and holds no token text. The real pass found a bug the fixtures could not: the account-slot blob holds `google-oauth2|<id>` but Grok Bot names the usage file after the escaped slot (`%7C`), so the first build said "Open Grok Bot to load its usage" next to a reading that was there. v0.5.1 was put back from the backup, `GrokBotReader` now escapes the slot (a slot saved already escaped is still found), and the pass was run again on the fixed build. The plan's rule that a limit whose reset has passed makes the whole reading not current did not misfire: with fresh numbers Claude was never dimmed, and the live Claude reading has only the weekly bucket (an idle session is absent, not a past reset), so the rule stays as planned. 380 tests (353 before this task); 23 mutations of the new code, each killed by the test meant to catch it.
+
+Not verified: Codex against live ChatGPT (not installed, OpenAI cancelled; the endpoint, headers and shape are from CodexBar), a light menu bar or macOS 13, Open at Login after replacing the app bundle, hiding a service through the real "..." menu (it opens a menu that blocks while open, so it was left to the unit tests), Claude hidden still being polled. Orphans left on purpose: `UsageText.detail` and `UsageText.percentLeft(_:)` have no caller in the app now.
+
+Next steps for whoever picks this up cold: merging, tagging and releasing v0.6.0 is Rahul's call; when it ships, delete the previous release, its DMG and its tag, as the rule in `CLAUDE.md` says. Every update changes the ad-hoc signature but Claude Code's sign-in is read through `/usr/bin/security`, so no password prompt is expected. If a Claude reading ever keeps a past `resets_at` and dims for no reason, narrow `ServiceState.isCurrent` to limits whose reset is after the reading.
+
 ## 2026-11-04 12:23 PT
 
 v0.5.1 on branch `fix/battery-keychain`, not merged, not pushed, not tagged; installed in `/Applications` on Rahul's Mac. Rahul: the widget "drains battery a lot and gets flagged by Mac's battery app almost always", and "Everytime I quit the app, it requires me log in again by entering my Mac password".

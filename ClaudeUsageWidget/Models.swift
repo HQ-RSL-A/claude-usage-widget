@@ -19,40 +19,6 @@ public enum RingColorState: Equatable {
     }
 }
 
-// MARK: - MenuBarLayout
-
-/// Which rings the menu bar item shows. Replaced the one-ring Session/Weekly toggle (`ringMetricMode`, v0.2.0 to v0.4.2).
-public enum MenuBarLayout: String, CaseIterable {
-    case both
-    case session
-    case week
-
-    public static let userDefaultsKey = "menuBarShows"
-
-    /// Keys earlier versions wrote. Not migrated: the old ring mode would hide the new two-ring layout.
-    static let legacyKeys = ["ringMetricMode"]
-
-    public static func load(from defaults: UserDefaults) -> MenuBarLayout {
-        defaults.string(forKey: userDefaultsKey).flatMap(MenuBarLayout.init(rawValue:)) ?? .both
-    }
-
-    public func save(to defaults: UserDefaults) {
-        defaults.set(rawValue, forKey: Self.userDefaultsKey)
-    }
-
-    public static func removeLegacyKeys(from defaults: UserDefaults) {
-        legacyKeys.forEach { defaults.removeObject(forKey: $0) }
-    }
-
-    public var menuTitle: String {
-        switch self {
-        case .both: return "Session and Week"
-        case .session: return "Session Only"
-        case .week: return "Week Only"
-        }
-    }
-}
-
 // MARK: - BucketKind
 
 /// The usage buckets the widget knows how to show, in display order. Raw values are the API keys.
@@ -64,14 +30,12 @@ public enum BucketKind: String, CaseIterable {
 
     public var label: String {
         switch self {
-        case .session: return "Current session"
-        case .weeklyAll: return "Weekly (all models)"
+        case .session: return "5hr Session"
+        case .weeklyAll: return "Weekly"
         case .weeklyOpus: return "Weekly (Opus)"
         case .weeklySonnet: return "Weekly (Sonnet)"
         }
     }
-
-    public var isWeekly: Bool { self != .session }
 }
 
 // MARK: - UsageBucket
@@ -89,10 +53,6 @@ public struct UsageBucket: Equatable {
         self.lockedReason = lockedReason
     }
 
-    public var barColorState: RingColorState {
-        .from(percent: percentUsed)
-    }
-
     /// What's left, as a whole percent. 100 minus the rounded used percent, so it always adds up
     /// to 100 with the "% used" claude.ai shows.
     public var percentLeft: Int { Self.percentLeft(forUsed: percentUsed) }
@@ -102,8 +62,6 @@ public struct UsageBucket: Equatable {
         let share = used.isNaN ? 0 : min(max(used, 0), 1)
         return 100 - Int((share * 100).rounded())
     }
-
-    public var isAtLimit: Bool { percentLeft == 0 }
 }
 
 // MARK: - ExtraUsage
@@ -134,16 +92,6 @@ public struct UsageData {
 
     public func bucket(_ kind: BucketKind) -> UsageBucket? {
         buckets.first { $0.kind == kind }
-    }
-
-    public var sessionBucket: UsageBucket? { bucket(.session) }
-
-    /// The weekly limit closest to running out; on a tie, the first in BucketKind order.
-    public var weekBucket: UsageBucket? {
-        buckets.filter(\.kind.isWeekly).reduce(nil) { best, next in
-            guard let best else { return next }
-            return next.percentUsed > best.percentUsed ? next : best
-        }
     }
 
     /// The earliest reset still ahead of `now`.

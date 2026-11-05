@@ -4,9 +4,17 @@ import XCTest
 @MainActor
 final class CallbackServerTests: XCTestCase {
 
+    /// Never `URLSession.shared`: its disk cache would keep these requests, and the sign-in callback carries a code.
+    private let session = URLSession(configuration: .ephemeral)
+
+    override func tearDown() {
+        session.finishTasksAndInvalidate()
+        super.tearDown()
+    }
+
     private func hit(_ port: UInt16, _ query: String) async throws -> (Int, String) {
         let url = URL(string: "http://127.0.0.1:\(port)/callback?\(query)")!
-        let (data, response) = try await URLSession.shared.data(from: url)
+        let (data, response) = try await session.data(from: url)
         return ((response as? HTTPURLResponse)?.statusCode ?? 0, String(decoding: data, as: UTF8.self))
     }
 

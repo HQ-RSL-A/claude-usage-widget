@@ -1,6 +1,8 @@
 import Foundation
 
-/// Usage in plain words, for the popover rows, the status line, the menu bar tooltip and VoiceOver.
+/// The app's plain words for times: when a limit resets, how old a reading is, the panel's status line and the menu bar
+/// title. StatusPresentation builds the menu bar's tooltip and VoiceOver text out of the same pieces, and the panel's
+/// reset times are in `UsageText+Panel.swift`.
 /// The clock, calendar and locale come in from outside, so every string can be tested exactly.
 struct UsageText {
     var now: Date
@@ -13,12 +15,12 @@ struct UsageText {
         self.locale = locale
     }
 
-    // MARK: - Rows
+    // MARK: - Reset
 
     /// "Resets in 3 hr 10 min" when the reset is under a day away, "Resets Thu 4:00 PM" further out,
-    /// nil when there is no reset ahead.
-    func reset(_ bucket: UsageBucket) -> String? {
-        guard let date = bucket.resetsAt, date > now else { return nil }
+    /// nil when there is no reset ahead (or no reset time at all).
+    func reset(_ date: Date?) -> String? {
+        guard let date, date > now else { return nil }
         let seconds = date.timeIntervalSince(now)
         guard seconds < 24 * 3600 else { return "Resets " + dayAndTime(date) }
         let minutes = max(1, Int((seconds / 60).rounded()))   // never "0 min" while a reset is still ahead
@@ -28,24 +30,17 @@ struct UsageText {
         return "Resets in \(hours) hr \(rest) min"
     }
 
-    /// The line under a row's bar.
-    func detail(_ bucket: UsageBucket) -> String {
-        let reset = reset(bucket)
-        guard bucket.isAtLimit else { return reset ?? "" }
-        return reset.map { "Limit reached, " + lowercasedFirst($0) } ?? "Limit reached"
-    }
-
-    func percentLeft(_ bucket: UsageBucket) -> String {
-        "\(bucket.percentLeft)% left"
-    }
-
     // MARK: - Status line
 
+    /// How long ago, in the biggest unit that fits: "3 min ago", "2 hr ago", "3 days ago". A reading from Grok Bot is
+    /// often days old, and "72 hr ago" makes a person do the sum.
     func age(of date: Date) -> String {
         let seconds = now.timeIntervalSince(date)
         if seconds < 60 { return "just now" }
         if seconds < 3600 { return "\(Int(seconds / 60)) min ago" }
-        return "\(Int(seconds / 3600)) hr ago"
+        if seconds < 24 * 3600 { return "\(Int(seconds / 3600)) hr ago" }
+        let days = Int(seconds / (24 * 3600))
+        return days == 1 ? "1 day ago" : "\(days) days ago"
     }
 
     func status(lastUpdated: Date?, isFetching: Bool, failure: String?) -> String {
@@ -59,25 +54,9 @@ struct UsageText {
 
     // MARK: - Menu bar
 
-    /// One line per limit, then how old the numbers are.
-    func tooltip(for data: UsageData) -> String {
-        var lines = data.buckets.map { bucket in
-            let line = "\(bucket.kind.label): \(percentLeft(bucket))"
-            return reset(bucket).map { line + ", " + lowercasedFirst($0) } ?? line
-        }
-        if lines.isEmpty { lines = ["No usage limits reported"] }
-        lines.append("Updated \(age(of: data.lastUpdated))")
-        return lines.joined(separator: "\n")
-    }
-
-    /// What VoiceOver reads for the menu bar item: the same two numbers the rings show.
-    func accessibilityValue(for data: UsageData) -> String {
-        let parts = [
-            data.sessionBucket.map { "session \(percentLeft($0))" },
-            data.weekBucket.map { "week \(percentLeft($0))" },
-        ].compactMap { $0 }
-        guard !parts.isEmpty else { return "No usage limits reported" }
-        return uppercasedFirst(parts.joined(separator: ", "))
+    /// The menu bar title: "40% remain". The number is what is left, like every other number in the app.
+    func percentRemain(_ left: Int) -> String {
+        "\(left)% remain"
     }
 
     // MARK: - Helpers
@@ -91,6 +70,6 @@ struct UsageText {
         return formatter.string(from: date)
     }
 
-    private func lowercasedFirst(_ text: String) -> String { text.prefix(1).lowercased() + text.dropFirst() }
-    private func uppercasedFirst(_ text: String) -> String { text.prefix(1).uppercased() + text.dropFirst() }
+    /// "Resets in 3 hr" as the end of a sentence: "..., resets in 3 hr".
+    func lowercasedFirst(_ text: String) -> String { text.prefix(1).lowercased() + text.dropFirst() }
 }

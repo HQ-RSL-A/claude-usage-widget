@@ -2,18 +2,18 @@
 
 ## What This Is
 
-Native macOS menu bar app (Swift + AppKit) showing Claude.ai plan usage at a glance. Two rings in the menu bar with what's left of the session and the week, click to expand full usage details. Part of `~/Developer/my-business/internal-tools/`.
+Native macOS menu bar app (Swift + AppKit) showing AI plan usage at a glance: Claude, Grok Bot and Codex. The menu bar shows one logo and "N% remain" (the limit closest to running out); click it for a panel with every service, its logo and each limit's reset. Part of `~/Developer/my-business/internal-tools/`.
 
 - **GitHub:** `HQ-RSL-A/claude-usage-widget`
 - **Distribution:** `.dmg` via GitHub Releases (GitHub Actions)
 - **Target:** macOS 13+ (Ventura and later)
-- **Current version:** v0.5.0
+- **Current version:** v0.6.0
 
 ## Stack
 
 - Swift + AppKit (no SwiftUI)
 - Anthropic OAuth token for auth (own token in the Keychain, or Claude Code's token read from its Keychain item); WKWebView login kept as a fallback
-- Core Graphics for ring drawing
+- Core Graphics for the menu bar image and the panel's fallback icons
 - xcodegen for project management (`project.yml` -> `.xcodeproj`)
 
 ## Rules
@@ -30,7 +30,11 @@ Native macOS menu bar app (Swift + AppKit) showing Claude.ai plan usage at a gla
 - **OAuth `state` is 32 random bytes (43 characters).** A 16-byte state loads the consent page but is refused at Authorize with "Invalid request format" (v0.4.0 bug). A URL that loads the consent page proves nothing about the Authorize step
 - **Never use Claude Code's refresh token.** Read its access token, nothing else; refreshing it would break Claude Code
 - **Tokens live in the Keychain or memory**, never UserDefaults, logs or files. Tests touch only `io.rsla.ClaudeUsageWidget.tests*` Keychain services
-- **Menu bar item: no motion, and its width depends only on the layout, never on the numbers.** Digits and tracks always use the menu bar's own color; only the arcs turn amber or red (Rahul, 2026-10-26: colored digits get lost on colored wallpapers)
+- **Menu bar item: no motion, and its width never changes with the numbers.** The title is the system's own menu bar text; only the badge dot on the logo turns amber or red (Rahul, 2026-10-26: colored digits get lost on colored wallpapers)
+- **Network requests go through `HTTP.session` (ephemeral) with `Cache-Control: no-store`; never `URLSession.shared`.** Its disk cache stores request headers, bearer tokens included, in `Cache.db`
+- **Grok Bot and Codex are read, never run, refreshed or stored.** Grok Bot: open only its account-slot and weekly-usage blobs, never `sand-secrets.json` or its Safe Storage Keychain item. Codex: read `auth.json` fresh on every poll, never refresh, write or keep its token. Tests never read real files under `~/Library` or `~/.codex`
+- **A hidden service's usage is never read.** Grok Bot and Codex are skipped by the poller (a hidden Codex never sends its token to ChatGPT); a hidden Claude stops its usage polling and restarts with a fetch when shown (Claude's sign-in check at launch still runs). Showing a service again reads it at once. The last shown service cannot be hidden
+- **Third-party artwork ships with its notice.** `THIRD-PARTY-NOTICES.md` is a resource of the app target (`project.yml`), so it lands in `Contents/Resources`, and the release notes (`build.yml`) link it. Check the built `.app` after touching either
 - **GitHub keeps only the latest release.** When a new release is out, delete the previous release, its DMG and its tag without asking (Rahul, 2026-10-27). Commit history stays; record the old tag's commit in `log.md`
 - **Never tag a release before the built app has been driven through the changed flow.** v0.4.0 was tagged before its manual pass and shipped a broken browser sign-in; green unit tests and a consent page that loads did not catch it. `brain.md` Testing says how to drive the popover for real
 
@@ -39,7 +43,7 @@ Native macOS menu bar app (Swift + AppKit) showing Claude.ai plan usage at a gla
 ```bash
 open ClaudeUsageWidget.xcodeproj     # Open in Xcode
 xcodegen generate                     # Regenerate project from project.yml
-swift makeIcon.swift                  # Regenerate app icon PNGs
+swift makeIcon.swift                  # Regenerate app icon PNGs (run from any folder; it finds the asset catalog beside itself)
 xcodebuild -scheme ClaudeUsageWidget -configuration Release  # CLI build
 xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNING_ALLOWED=NO  # Unit tests
 ```
@@ -52,4 +56,4 @@ xcodebuild test -scheme ClaudeUsageWidget -destination platform=macOS CODE_SIGNI
 - Downloaded DMG triggers Gatekeeper error - users must run `sudo xattr -cr /Applications/ClaudeUsageWidget.app`
 - Google sign-in fails inside the embedded login window (unsigned WKWebView). Use **Sign in with your browser**, where it works
 
-See `brain.md` for architecture details, auth flow, API shape, and ring color states.
+See `brain.md` for architecture details, auth flow, API shape, how Grok Bot and Codex are read, and the menu bar badge and panel details.

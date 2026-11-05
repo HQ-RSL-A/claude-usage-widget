@@ -22,6 +22,10 @@ targets:
       - path: ClaudeUsageWidget
         excludes:
           - "**/*Tests*"
+      # The Lobe Icons license asks that its notice travels with the artwork, so the app carries it
+      # (Contents/Resources/THIRD-PARTY-NOTICES.md), not only the repository.
+      - path: THIRD-PARTY-NOTICES.md
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.rsla.ClaudeUsageWidget
@@ -33,8 +37,8 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        MARKETING_VERSION: "0.5.1"
-        CURRENT_PROJECT_VERSION: "8"
+        MARKETING_VERSION: "0.6.0"
+        CURRENT_PROJECT_VERSION: "9"
     scheme:
       testTargets:
         - ClaudeUsageWidgetTests
