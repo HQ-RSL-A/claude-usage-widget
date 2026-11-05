@@ -2,6 +2,38 @@
 
 Newest entry on top.
 
+## 2026-11-04 16:50 PT
+
+v0.6.0 is final on `feat/usage-panel` (head after this entry), and it's installed in `/Applications`. It is not merged to `main`, not pushed and not tagged, which is Rahul's call. The whole branch had a final review in three parallel areas (data and security, menu bar and battery, panel and docs) plus the Task 9 gate.
+
+**Fixed in one wave** (three fixers, one per area, each re-checked):
+- A new sign-in no longer shows the previous session's Claude numbers.
+- The panel replaces only the sections that changed, instead of rebuilding everything every minute.
+- The MIT notice ships inside the app (`Contents/Resources/THIRD-PARTY-NOTICES.md`) and the release notes link it.
+- Wake re-renders at once, so pre-sleep numbers dim before they're refreshed.
+- A hidden Claude stops its usage polling.
+- A signed-out Claude shows "Sign in" when nothing shown is current. Other services without numbers show "No data".
+- A limit whose reset passed makes a reading old only if the reading was taken before that reset.
+- `HTTP.session` has no URL cache at all.
+- A half-written Codex `auth.json` keeps the last numbers.
+- A refresh asked for mid-pass runs one more pass.
+- The amber badge is darker on a light menu bar.
+- Grok Bot's copy is "No included usage on this plan".
+- Dead code and tests that couldn't fail were removed.
+
+**Tests:** 399.
+
+**Real Mac check:**
+- No `SecurityAgent` dialog.
+- 0.0% CPU.
+- The bar shows the Claude mark and "77% remain", matching UseReserve beside it.
+- The panel shows Claude Weekly 77% (Nov 10) and Grok Bot Weekly 93% (Nov 10). No Codex section.
+- Hiding and showing Grok Bot through preferences removed its section and brought it back. With Claude hidden, nothing went to the network when the panel opened.
+
+**Not verified live:** wake from sleep, the real "..." menu toggles, a light menu bar, macOS 13, CI's Xcode 16 build, Codex against ChatGPT.
+
+**Decisions made on Rahul's behalf:** `docs/plans/2026-11-04-v0.6.0-rulings.md`.
+
 ## 2026-11-04 15:30 PT
 
 v0.6.0 on branch `feat/usage-panel`, not merged, not pushed, not tagged; the Release build (CI's flags) is installed in `/Applications` on Rahul's Mac, and the v0.5.1 app it replaced is kept only in the session scratchpad. HQ-189. Rahul uses UseReserve beside the widget and wanted "a logo and 90% remain" in the menu bar, "all the other LLMs' usages with their icons" in the panel and a better app icon: Claude, Grok Bot and Codex, not Antigravity. Spec `docs/plans/2026-11-04-v0.6.0-usage-panel-design.md`, plan `docs/plans/2026-11-04-v0.6.0-implementation-plan.md`.
